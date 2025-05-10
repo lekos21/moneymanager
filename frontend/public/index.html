@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MoneyManager</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background-color: #f9fafb;
+      color: #1f2937;
+    }
+    .container {
+      max-width: 600px;
+      padding: 2rem;
+      text-align: center;
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 2rem;
+      background: linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    p {
+      margin-bottom: 1.5rem;
+      line-height: 1.5;
+    }
+    .button {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: 9999px;
+      background: linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169);
+      color: white;
+      font-weight: 500;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+    .button:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MoneyManager</h1>
+    <p>Welcome to MoneyManager! Your app is being deployed to Firebase.</p>
+    <p>There was an issue with the Next.js static export, but we're working on fixing it.</p>
+    <p>In the meantime, you can access your app locally by running:</p>
+    <code>cd frontend && npm run dev</code>
+    <p style="margin-top: 2rem;">
+      <a href="https://console.firebase.google.com/project/moneymanager-f7891/overview" class="button">Go to Firebase Console</a>
+    </p>
+  </div>
+</body>
+</html>

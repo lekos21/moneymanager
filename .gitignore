@@ -1,0 +1,19 @@
+# Node
+node_modules/
+.next/
+.env*
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Firebase service account key
+backend/credentials-google/*.json
+
+# System
+.DS_Store
+.vscode/

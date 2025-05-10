@@ -1,0 +1,147 @@
+import os
+from datetime import datetime, timezone
+from typing import List, Optional
+from pydantic import BaseModel, Field, validator
+from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+class ExpenseData(BaseModel):
+    """Data structure for parsed expense information"""
+    amount: float = Field(description="The amount of money spent")
+    currency: str = Field(description="The currency code (e.g., EUR, USD)")
+    area_tags: List[str] = Field(description="Tags that categorize the expense area (e.g., food, clothing, transportation)", default=[])
+    context_tags: List[str] = Field(description="Optional tags that provide additional context or purpose (e.g., gift, personal, vacation)", default=[])
+    short_text: str = Field(description="A short description of what was purchased (e.g., 'shoes', 'dinner', 'movie ticket')")
+    
+    # Add validation to ensure amount is positive
+    @validator('amount')
+    def amount_must_be_positive(cls, v):
+        if v < 0:
+            raise ValueError("Amount must be positive")
+        return v
+
+def create_expense_parser():
+    """Create a LangChain parser for expense data"""
+    # Get API key from environment variable
+    api_key = os.environ.get("OPENAI_API_KEY")
+    
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY environment variable not found")
+    
+    # Remove quotes if they're present in the API key
+    if api_key.startswith('"') and api_key.endswith('"'):
+        api_key = api_key[1:-1]
+    if api_key.startswith("'") and api_key.endswith("'"):
+        api_key = api_key[1:-1]
+    
+    print(f"Using API key starting with: {api_key[:5]}...")
+    
+    # Use a reliably available model (gpt-3.5-turbo is widely available)
+    # This can be updated to gpt-4o-mini or another model that's definitely available in your account
+    model = ChatOpenAI(
+        model="gpt-3.5-turbo",  # More reliable model name
+        temperature=0,  # Low temperature for more deterministic outputs
+        openai_api_key=api_key,  # Explicitly pass the API key
+    )
+    
+    # Set up the Pydantic output parser with our ExpenseData model
+    parser = PydanticOutputParser(pydantic_object=ExpenseData)
+    
+    # Create a prompt template with improved handling for simple formats
+    prompt = PromptTemplate(
+    template="""
+        You are an AI assistant that extracts expense information from text.
+        Extract the following details from the user's expense description:
+
+        1. The amount spent - REQUIRED
+
+        2. The currency - REQUIRED
+           - Always return a 3-letter currency code (USD, EUR, GBP, etc.)
+
+        3. Area tags (REQUIRED): Tags that categorize what the expense is for. Feel free to go beyond the example and come up with a new relevant tag, or just set it as "other" if you can't
+           Examples include:  
+           food, groceries, restaurant, clothes, accessories, electronics, books, furniture, personal-care, health, transport, fuel, utilities, subscription, education, entertainment, pet-care, office-supplies, travel-gear, sports, other
+        
+        4. Context tags (OPTIONAL): Tags that provide additional context.
+           Examples include:  
+           gift, investment, charity, vacation, commute, date-night, subscription-renewal, home-improvement, medical-expense, education, emergency, event, holiday, maintenance
+
+        5. Short text (REQUIRED): A brief description (1–3 words) of what was purchased.  
+           Examples: "shoes", "dinner", "movie ticket", "electricity bill"  
+
+        {format_instructions}
+
+        User expense: {query}
+        """,
+            input_variables=["query"],
+            partial_variables={"format_instructions": parser.get_format_instructions()},
+        )
+
+    
+    # Create the chain
+    prompt_and_model = prompt | model
+    
+    return prompt_and_model, parser
+
+def parse_expense(text: str, user_id: str) -> dict:
+    """
+    Parse expense information from text and return a structured expense object
+    
+    Args:
+        text: The text to parse expense information from
+        user_id: The ID of the user making the request
+        
+    Returns:
+        A dictionary containing the parsed expense information
+    """
+    print(f"Parsing expense: '{text}' for user: {user_id}")
+    
+    try:
+        # Create the parser chain
+        prompt_and_model, parser = create_expense_parser()
+        
+        # Get the model output
+        print(f"Sending to LLM: '{text}'")
+        output = prompt_and_model.invoke({"query": text})
+        print(f"LLM output: {output}")
+        
+        # Parse the output into our Pydantic model
+        result = parser.invoke(output)
+        print(f"Parsed result: {result}")
+        
+        # Convert to dict and add the user_id, timestamp, and raw_text
+        result_dict = result.dict()  # Use .dict() instead of model_dump() in Pydantic v1
+        result_dict["user_id"] = user_id
+        
+        # Use the original text directly
+        result_dict["raw_text"] = text
+        
+        # Always use current timestamp (fix deprecated warning)
+        result_dict["timestamp"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        
+        print(f"Final result: {result_dict}")
+        return result_dict
+    except Exception as e:
+        # Print the error for debugging
+        print(f"Error parsing expense: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        
+        # If parsing fails, return a basic structure with the raw text
+        fallback = {
+            "user_id": user_id,
+            "amount": 0.0,
+            "currency": "EUR",  # Default currency
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "raw_text": text,
+            "area_tags": [],
+            "context_tags": [],
+            "short_text": "generic purchase"
+        }
+        print(f"Returning fallback: {fallback}")
+        return fallback
