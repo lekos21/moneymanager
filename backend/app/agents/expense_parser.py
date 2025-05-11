@@ -27,7 +27,7 @@ class ExpenseData(BaseModel):
             raise ValueError("Amount must be positive")
         return v
 
-def create_expense_parser(db_client):
+def create_expense_parser(db_client, default_currency):
     """Create a LangChain parser for expense data"""
     # Get API key from environment variable
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -79,22 +79,23 @@ def create_expense_parser(db_client):
 
         2. The currency - REQUIRED
            - Always return a 3-letter currency code (USD, EUR, GBP, etc.)
+           - If the user doesn’t specify a currency, assume {default_currency}
 
-        3. Area tags (REQUIRED): Tags that categorize what the expense is for. Feel free to go beyond the examples and come up with a new relevant tag, or just set it as "other" if you can't.  
-           Examples include: {area_examples}
+        3. Area tags (REQUIRED): Tags that categorize what the expense is for. 
+           Choose between: {area_examples}
 
         4. Context tags (OPTIONAL): Tags that provide additional context.  
-           Examples include: {context_examples}
+           Choose between: {context_examples}
 
-        5. Short text (REQUIRED): A brief description (1–3 words) of what was purchased. Include brands if provided.
-           Examples: "shoes", "dinner", "movie ticket", "electricity bill"  
+        5. Short text (REQUIRED): A brief description (1–4 words) of what was purchased. Include brands if provided or relevant details.
+           Examples: "Prada shoes", "dinner at Luigi's", "movie ticket", "electricity bill", "Netflix payment", "Airbnb booking", "H&M t-shirt", "gym membership", "gift for Anna"
 
         {format_instructions}
 
         User expense: {query}
         """,
             input_variables=["query"],
-            partial_variables={"format_instructions": parser.get_format_instructions(), "area_examples": area_examples, "context_examples": context_examples},
+            partial_variables={"format_instructions": parser.get_format_instructions(), "area_examples": area_examples, "context_examples": context_examples, "default_currency": default_currency},
         )
 
     
@@ -118,8 +119,15 @@ def parse_expense(text: str, user_id: str, db_client: firestore.Client) -> dict:
     print(f"Parsing expense: '{text}' for user: {user_id}")
     
     try:
+        # Fetch user's default currency
+        user_doc = db_client.collection('users').document(user_id).get()
+        if user_doc.exists and 'currency' in user_doc.to_dict():
+            default_currency = user_doc.to_dict()['currency']
+        else:
+            default_currency = 'EUR'
+        
         # Create the parser chain
-        prompt_and_model, parser = create_expense_parser(db_client)
+        prompt_and_model, parser = create_expense_parser(db_client, default_currency)
         
         # Get the model output
         print(f"Sending to LLM: '{text}'")

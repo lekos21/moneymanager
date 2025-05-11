@@ -51,7 +51,7 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
   const borderColor = tag?.colors?.hex || '#d1d5db'; // Default border color (gray-300)
 
   // Determine card width classes
-  const cardWidthClasses = fullWidth ? 'w-full' : 'w-full';
+  const cardWidthClasses = fullWidth ? 'w-full' : 'w-full min-w-[320px] max-w-[400px]';
 
   // Handle expense deletion
   const handleDelete = async () => {
@@ -94,7 +94,7 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
         borderLeftColor: borderColor,
       }}
     >
-      <div className="flex justify-between items-center py-2 px-3 bg-gray-50 border-b-2 border-gray-100">
+      <div className="flex justify-between items-center py-2 px-3 bg-gray-50 border-b-2 border-gray-100 gap-2">
         <div className="flex items-center">
           <div className={`w-7 h-7 rounded-full flex items-center justify-center mr-2`}>
             <TagIcon 
@@ -104,8 +104,8 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
               fallbackIcon="tag"
             />
           </div>
-          <div>
-            <h4 className="text-base font-semibold text-gray-800">{expense.short_text || "Expense"}</h4>
+          <div className="min-w-0 flex-1 max-w-[200px]">
+            <h4 className="text-base font-semibold text-gray-800 truncate overflow-hidden text-ellipsis" title={expense.short_text || "Expense"}>{expense.short_text || "Expense"}</h4>
             <span className="flex items-center text-xs text-gray-500 space-x-1">
               <span>{new Date(expense.timestamp).toLocaleDateString(undefined, { month:'short', day:'numeric' })}</span>
               <span>•</span>
@@ -113,7 +113,7 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
             </span>
           </div>
         </div>
-        <div className="font-bold">
+        <div className="font-bold whitespace-nowrap flex-shrink-0">
           {getCurrencySymbol(expense.currency)}{parseFloat(expense.amount).toFixed(2)}
         </div>
       </div>
