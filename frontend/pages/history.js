@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import Head from 'next/head';
 import Link from 'next/link';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
+import { useTags } from '../contexts/TagsContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import expenseService from '../services/expenseService';
 import ExpenseCard from '../components/ExpenseCard';
@@ -20,6 +22,7 @@ const formatDate = (dateString) => {
 
 export default function History() {
   const { user } = useAuth();
+  const { getTag } = useTags();
   const [expenses, setExpenses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -56,6 +59,19 @@ export default function History() {
       else list.splice(idx, 1);
       return { ...prev, [type]: list };
     });
+  };
+
+  const updateState = (deletedId) => {
+    const updated = expenses.filter(exp => exp.id !== deletedId);
+    setExpenses(updated);
+    setAvailableTags(extractUniqueTags(updated));
+    setTotalAmount(updated.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0));
+    setNotification({ type: 'success', message: 'Expense deleted successfully' });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleExpenseDeleted = (deletedExpenseId) => {
+    updateState(deletedExpenseId);
   };
 
   useEffect(() => {
@@ -99,17 +115,6 @@ export default function History() {
     fetchExpenses();
   }, [user]);
 
-  const handleExpenseDeleted = (deletedExpenseId) => {
-    setExpenses(prevExpenses => prevExpenses.filter(exp => exp.id !== deletedExpenseId));
-    // Recalculate total and tags
-    const updatedExpenses = expenses.filter(exp => exp.id !== deletedExpenseId);
-    setAvailableTags(extractUniqueTags(updatedExpenses));
-    const total = updatedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
-    setTotalAmount(total);
-    setNotification({ type: 'success', message: 'Expense deleted successfully' });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
   return (
     <ProtectedRoute>
       <Layout>
@@ -130,17 +135,20 @@ export default function History() {
                   <div className="flex overflow-x-auto pb-2 scrollbar-hide">
                     <div className="flex space-x-2">
                       {availableTags.areaTags.map(tag => (
-                        <button
-                          key={`area-${tag}`}
-                          onClick={() => toggleTagSelection(tag, 'areaTags')}
-                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
-                            selectedTags.areaTags.includes(tag)
-                              ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-                              : `${getTagBgColor(tag.toLowerCase())} ${getTagTextColor(tag.toLowerCase())}`
-                          }`}
-                        >
-                          {tag}
-                        </button>
+                        (() => {
+                          const selected = selectedTags.areaTags.includes(tag);
+                          const tagData = getTag(tag.toLowerCase());
+                          const bgColor = tagData?.colors?.bgHex || '#EBF5FF';
+                          const textColor = tagData?.colors?.textHex || '#3B82F6';
+                          return (
+                            <button
+                              key={`area-${tag}`}
+                              onClick={() => toggleTagSelection(tag, 'areaTags')}
+                              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${selected ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' : ''}`}
+                              style={!selected ? { backgroundColor: bgColor, color: textColor } : {}}
+                            >{tag}</button>
+                          );
+                        })()
                       ))}
                     </div>
                   </div>
@@ -154,17 +162,20 @@ export default function History() {
                   <div className="flex overflow-x-auto pb-2 scrollbar-hide">
                     <div className="flex space-x-2">
                       {availableTags.contextTags.map(tag => (
-                        <button
-                          key={`context-${tag}`}
-                          onClick={() => toggleTagSelection(tag, 'contextTags')}
-                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
-                            selectedTags.contextTags.includes(tag)
-                              ? 'bg-gradient-to-r from-pink-400 to-orange-400 text-white'
-                              : 'bg-blue-50 text-blue-600'
-                          }`}
-                        >
-                          {tag}
-                        </button>
+                        (() => {
+                          const selected = selectedTags.contextTags.includes(tag);
+                          const tagData = getTag(tag.toLowerCase());
+                          const bgColor = tagData?.colors?.bgHex || '#F0F7FF';
+                          const textColor = tagData?.colors?.textHex || '#2563EB';
+                          return (
+                            <button
+                              key={`context-${tag}`}
+                              onClick={() => toggleTagSelection(tag, 'contextTags')}
+                              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${selected ? 'bg-gradient-to-r from-pink-400 to-orange-400 text-white' : ''}`}
+                              style={!selected ? { backgroundColor: bgColor, color: textColor } : {}}
+                            >{tag}</button>
+                          );
+                        })()
                       ))}
                     </div>
                   </div>
@@ -193,16 +204,26 @@ export default function History() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-3 max-w-lg mx-auto">
-                {getFilteredExpenses().map(expense => (
-                  <ExpenseCard 
-                    key={expense.id} 
-                    expense={expense} 
-                    onDelete={() => handleExpenseDeleted(expense.id)}
-                    fullWidth={true}
-                  />
-                ))}
-              </div>
+              <AnimatePresence initial={false}>
+                <div className="space-y-3 max-w-lg mx-auto">
+                  {getFilteredExpenses().map(expense => (
+                    <motion.div
+                      key={expense.id}
+                      layout
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeInOut' }}
+                    >
+                      <ExpenseCard
+                        expense={expense}
+                        onDelete={() => handleExpenseDeleted(expense.id)}
+                        fullWidth={true}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              </AnimatePresence>
             )}
           </div>
 
