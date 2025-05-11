@@ -329,7 +329,7 @@ export default function Chat() {
                   >
                     {isUser ? (
                       <div 
-                        className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 relative"
+                        className="w-auto max-w-[75%] px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 relative"
                         onContextMenu={(e) => {
                           e.preventDefault();
                           setShowConfirmDelete({ id: message.id, type: 'message' });

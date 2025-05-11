@@ -107,8 +107,7 @@ export default function History() {
     const total = updatedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
     setTotalAmount(total);
     setNotification({ type: 'success', message: 'Expense deleted successfully' });
-    setTimeout(() => setNotification(null), 3000); 
-    setShowConfirmDelete(null); 
+    setTimeout(() => setNotification(null), 3000);
   };
 
   return (

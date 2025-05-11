@@ -27,7 +27,7 @@ class ExpenseData(BaseModel):
             raise ValueError("Amount must be positive")
         return v
 
-def create_expense_parser():
+def create_expense_parser(db_client):
     """Create a LangChain parser for expense data"""
     # Get API key from environment variable
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -38,15 +38,13 @@ def create_expense_parser():
     # Remove quotes if they're present in the API key
     if api_key.startswith('"') and api_key.endswith('"'):
         api_key = api_key[1:-1]
-    if api_key.startswith("'") and api_key.endswith("'"):
-        api_key = api_key[1:-1]
     
     print(f"Using API key starting with: {api_key[:5]}...")
     
     # Use a reliably available model (gpt-3.5-turbo is widely available)
     # This can be updated to gpt-4o-mini or another model that's definitely available in your account
     model = ChatOpenAI(
-        model="gpt-3.5-turbo",  # More reliable model name
+        model="gpt-4.1-nano",  # More reliable model name
         temperature=0,  # Low temperature for more deterministic outputs
         openai_api_key=api_key,  # Explicitly pass the API key
     )
@@ -54,6 +52,23 @@ def create_expense_parser():
     # Set up the Pydantic output parser with our ExpenseData model
     parser = PydanticOutputParser(pydantic_object=ExpenseData)
     
+    # Fetch tags dynamically from Firestore
+    tags_docs = db_client.collection('tags').stream()
+    area_tags = []
+    context_tags = []
+    for doc in tags_docs:
+        data = doc.to_dict()
+        if not data.get("active", False):
+            continue
+        tag_id = data.get("tag_id", doc.id)
+        facet = data.get("facet", "")
+        if facet == "area":
+            area_tags.append(tag_id)
+        elif facet == "context":
+            context_tags.append(tag_id)
+    area_examples = ", ".join(area_tags)
+    context_examples = ", ".join(context_tags)
+
     # Create a prompt template with improved handling for simple formats
     prompt = PromptTemplate(
     template="""
@@ -65,15 +80,13 @@ def create_expense_parser():
         2. The currency - REQUIRED
            - Always return a 3-letter currency code (USD, EUR, GBP, etc.)
 
-        3. Area tags (REQUIRED): Tags that categorize what the expense is for. Feel free to go beyond the example and come up with a new relevant tag, or just set it as "other" if you can't
-           Examples include:  
-           food, groceries, restaurant, clothes, accessories, electronics, books, furniture, personal-care, health, transport, fuel, utilities, subscription, education, entertainment, pet-care, office-supplies, travel-gear, sports, other
-        
-        4. Context tags (OPTIONAL): Tags that provide additional context.
-           Examples include:  
-           gift, investment, charity, vacation, commute, date-night, subscription-renewal, home-improvement, medical-expense, education, emergency, event, holiday, maintenance
+        3. Area tags (REQUIRED): Tags that categorize what the expense is for. Feel free to go beyond the examples and come up with a new relevant tag, or just set it as "other" if you can't.  
+           Examples include: {area_examples}
 
-        5. Short text (REQUIRED): A brief description (1–3 words) of what was purchased.  
+        4. Context tags (OPTIONAL): Tags that provide additional context.  
+           Examples include: {context_examples}
+
+        5. Short text (REQUIRED): A brief description (1–3 words) of what was purchased. Include brands if provided.
            Examples: "shoes", "dinner", "movie ticket", "electricity bill"  
 
         {format_instructions}
@@ -81,7 +94,7 @@ def create_expense_parser():
         User expense: {query}
         """,
             input_variables=["query"],
-            partial_variables={"format_instructions": parser.get_format_instructions()},
+            partial_variables={"format_instructions": parser.get_format_instructions(), "area_examples": area_examples, "context_examples": context_examples},
         )
 
     
@@ -106,7 +119,7 @@ def parse_expense(text: str, user_id: str, db_client: firestore.Client) -> dict:
     
     try:
         # Create the parser chain
-        prompt_and_model, parser = create_expense_parser()
+        prompt_and_model, parser = create_expense_parser(db_client)
         
         # Get the model output
         print(f"Sending to LLM: '{text}'")

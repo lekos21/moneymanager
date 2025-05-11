@@ -55,28 +55,36 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
 
   // Handle expense deletion
   const handleDelete = async () => {
+    // Check for expense ID
     if (!expense.id) {
       console.error('No expense ID found:', expense);
       return;
     }
 
+    // Attempt to delete the expense; ignore errors if already removed
+    let expenseDeleted = false;
     try {
-      // Step 1: Delete the expense from the database
       await expenseService.deleteExpense(expense.id);
-
-      // Step 2: Delete the associated message if we have a message ID
-      if (messageId) {
-        await chatService.deleteMessage(messageId);
-      }
-
-      // Step 3: Notify parent component about the deletion with both IDs
-      onDelete(expense.id, messageId);
-      setShowConfirmDelete(false);
-    } catch (error) {
-      console.error('Failed to delete expense or message:', error);
-      alert('Failed to delete. Please try again.');
-      setShowConfirmDelete(false);
+      expenseDeleted = true;
+    } catch (err) {
+      console.warn('Expense deletion skipped or failed:', err);
     }
+
+    // Always attempt to delete the chat message if a messageId exists
+    if (messageId) {
+      try {
+        await chatService.deleteMessage(messageId);
+      } catch (err) {
+        console.error('Failed to delete message:', err);
+        alert('Failed to delete message. Please try again.');
+        setShowConfirmDelete(false);
+        return;
+      }
+    }
+
+    // Notify parent: pass expenseId only if it was deleted, but always pass messageId
+    onDelete(expenseDeleted ? expense.id : null, messageId);
+    setShowConfirmDelete(false);
   };
 
   return (
