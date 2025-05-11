@@ -6,6 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import expenseService from '../services/expenseService';
 import ExpenseCard from '../components/ExpenseCard';
+import { getTagBgColor, getTagTextColor } from '../utils/tagUtils';
+import LoadingAnimation from '../components/LoadingAnimation';
 
 const formatDate = (dateString) => {
   const date = new Date(dateString);
@@ -132,10 +134,10 @@ export default function History() {
                         <button
                           key={`area-${tag}`}
                           onClick={() => toggleTagSelection(tag, 'areaTags')}
-                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
+                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
                             selectedTags.areaTags.includes(tag)
                               ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-                              : 'bg-blue-100 text-blue-800'
+                              : `${getTagBgColor(tag.toLowerCase())} ${getTagTextColor(tag.toLowerCase())}`
                           }`}
                         >
                           {tag}
@@ -156,10 +158,10 @@ export default function History() {
                         <button
                           key={`context-${tag}`}
                           onClick={() => toggleTagSelection(tag, 'contextTags')}
-                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
+                          className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
                             selectedTags.contextTags.includes(tag)
                               ? 'bg-gradient-to-r from-pink-400 to-orange-400 text-white'
-                              : 'bg-orange-100 text-orange-800'
+                              : 'bg-blue-50 text-blue-600'
                           }`}
                         >
                           {tag}
@@ -176,11 +178,7 @@ export default function History() {
           <div className="flex-1 overflow-y-auto p-4">
             {isLoading ? (
               <div className="flex justify-center items-center h-full">
-                <div className="flex space-x-2">
-                  <div className="w-3 h-3 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-3 h-3 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-3 h-3 rounded-full bg-purple-500 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
+                <LoadingAnimation fullPage={true} text="Loading expenses..." />                
               </div>
             ) : error ? (
               <div className="flex justify-center items-center h-full">

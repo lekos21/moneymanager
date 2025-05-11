@@ -121,159 +121,105 @@ export default function Chat() {
         const jsonStr = content.substring(jsonStartIndex, jsonEndIndex + 1);
         expenseData = JSON.parse(jsonStr);
       } else {
-        // Parse the simple format: "✅ Expense saved: shoes\n💰 Amount: 5 USD\n🏷️ Area: clothes\nID: 25i4oMs2EeUUmdJOVLZt"
-        expenseData = {};
+        // Fallback to regex-based parsing if JSON not found
+        const amountMatch = content.match(/Amount: ([\d.]+) ([A-Z]{3})/);
+        const dateMatch = content.match(/Date: (.+?)(?=\n|$)/);
+        const tagsMatch = content.match(/Tags: (.+?)(?=\n|$)/);
         
-        // Get short text (item name)
-        const shortTextMatch = content.match(/Expense saved: ([^\n]+)/);
-        expenseData.short_text = shortTextMatch ? shortTextMatch[1].trim() : "Expense";
-        
-        // Get amount and currency
-        const amountMatch = content.match(/Amount: ([\d.]+) ([A-Z]+)/);
         if (amountMatch) {
-          expenseData.amount = parseFloat(amountMatch[1]);
-          expenseData.currency = amountMatch[2];
-        } else {
-          expenseData.amount = 0;
-          expenseData.currency = "USD";
+          expenseData = {
+            amount: parseFloat(amountMatch[1]),
+            currency: amountMatch[2],
+            timestamp: dateMatch ? new Date(dateMatch[1]).toISOString() : new Date().toISOString(),
+            tags: tagsMatch ? tagsMatch[1].split(', ') : []
+          };
         }
-        
-        // Get area tags
-        const areaTagMatch = content.match(/Area: ([^\n]+)/);
-        expenseData.area_tags = areaTagMatch ? [areaTagMatch[1].trim()] : [];
-        
-        // Get context tags if available
-        const contextTagMatch = content.match(/Context: ([^\n]+)/);
-        expenseData.context_tags = contextTagMatch ? [contextTagMatch[1].trim()] : [];
-        
-        // Get ID if available
-        const idMatch = content.match(/ID: ([^\n]+)/);
-        expenseData.id = idMatch ? idMatch[1].trim() : null;
       }
       
-      // Cache the result to avoid re-parsing
       if (expenseData) {
+        // Cache the parsed data
         setParsedExpenseCache(prev => ({
           ...prev,
           [messageId]: expenseData
         }));
+        
+        return expenseData;
       }
       
-      return expenseData;
+      return null;
     } catch (error) {
-      // Silently fail instead of spamming console
+      console.error('Error parsing expense data:', error);
       return null;
     }
   };
 
   // Format expense for display
   const formatExpenseMessage = (expense) => {
-    if (!expense) return '';
-    const amount = parseFloat(expense.amount).toFixed(2);
-    const currency = expense.currency;
-    const shortText = expense.short_text || "Expense";
-    
-    return `${shortText}: ${currency}${amount}`;
+    const currencySymbol = getCurrencySymbol(expense.currency);
+    return `💰 Expense saved: ${expense.short_text || 'Item'} - ${currencySymbol}${expense.amount}`;
   };
 
   // Send message and process expense
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    const content = inputText.trim();
-    if (!content || isProcessing) return;
+    const message = inputText.trim();
+    if (!message) return;
     
     setInputText('');
     setIsProcessing(true);
     
     try {
-      // Add user message to the chat
-      const userMessage = await chatService.sendMessage(content);
+      // First add the user message to the UI
+      const userMessage = {
+        id: `temp-${Date.now()}`,
+        content: message,
+        timestamp: new Date().toISOString(),
+        message_type: 'user'
+      };
+      
       setMessages(prev => [...prev, userMessage]);
       
-      // Parse as expense if it looks like one - improved detection
-      const hasNumber = /\d+/.test(content);
-
-      if (hasNumber) {
-        try {
-          console.log('Attempting to parse expense:', content);
-          // Process message through expense parser
-          const expenseResult = await chatService.parseExpense(content);
-          console.log('Parsed expense result:', expenseResult);
+      // Save the user message to the database
+      const savedUserMessage = await chatService.sendMessage(message, 'user');
+      
+      // Replace the temporary message with the saved one
+      setMessages(prev => prev.map(msg => 
+        msg.id === userMessage.id ? savedUserMessage : msg
+      ));
+      
+      // Try to parse the message as an expense
+      try {
+        const parseResult = await chatService.parseExpense(message, true);
+        
+        if (parseResult && parseResult.id) {
+          console.log('Expense parsed successfully:', parseResult);
           
-          // Check if we got a valid expense (amount greater than 0)
-          if (expenseResult && parseFloat(expenseResult.amount) > 0) {
-            // Create a system message with expense details
-            const formattedExpense = formatExpenseMessage(expenseResult);
-            const expenseMessage = `Expense saved: ${formattedExpense}\n\n${JSON.stringify(expenseResult, null, 2)}`;
-            
-            // Add the system message
-            const systemMessage = await chatService.sendMessage(expenseMessage, 'system');
-            setMessages(prev => [...prev, systemMessage]);
-            
-            // Show notification
-            setNotification({
-              type: 'success',
-              message: `Expense of ${expenseResult.currency}${parseFloat(expenseResult.amount).toFixed(2)} saved!`
-            });
-          } else {
-            console.warn('Received invalid expense with zero amount:', expenseResult);
-            
-            // Try again with a simplified format if the original message was complex
-            if (content.length > 15 && !content.includes('for')) {
-              // Try to extract just the amount and basic category
-              const amountMatch = content.match(/(\d+[.,]?\d*)\s*[$€£]|[$€£]\s*(\d+[.,]?\d*)/i);
-              const categoryMatch = content.match(/(?:for|on)\s+([\w-]+)/i);
-              
-              if (amountMatch || categoryMatch) {
-                const amount = amountMatch ? (amountMatch[1] || amountMatch[2]) : '';
-                const category = categoryMatch ? categoryMatch[1] : '';
-                const simplifiedQuery = amount && category ? `${amount}$ for ${category}` : null;
-                
-                if (simplifiedQuery) {
-                  console.log('Trying simplified format:', simplifiedQuery);
-                  try {
-                    // Try again with simplified format
-                    const retryResult = await chatService.parseExpense(simplifiedQuery);
-                    
-                    if (retryResult && parseFloat(retryResult.amount) > 0) {
-                      // Success with simplified format
-                      const formattedExpense = formatExpenseMessage(retryResult);
-                      const expenseMessage = `Expense saved: ${formattedExpense}\n\n${JSON.stringify(retryResult, null, 2)}`;
-                      
-                      // Add the system message
-                      const systemMessage = await chatService.sendMessage(expenseMessage, 'system');
-                      setMessages(prev => [...prev, systemMessage]);
-                      
-                      // Show notification
-                      setNotification({
-                        type: 'success',
-                        message: `Expense of ${retryResult.currency}${parseFloat(retryResult.amount).toFixed(2)} saved!`
-                      });
-                      return; // Exit early since we succeeded
-                    }
-                  } catch (retryError) {
-                    console.error('Error with simplified format:', retryError);
-                  }
-                }
-              }
-            }
-            
-            // Show error for invalid expense
-            const errorMessage = await chatService.sendMessage(
-              'Sorry, I couldn\'t properly parse that expense. Please try a simpler format like "12$ for food".', 
-              'system'
-            );
-            setMessages(prev => [...prev, errorMessage]);
-          }
-        } catch (error) {
-          console.error('Error processing expense:', error);
-          // Only show error if it's likely an expense but failed to parse
-          const errorMessage = await chatService.sendMessage(
-            'Sorry, I couldn\'t process that as an expense. Please check the format and try again.', 
+          // Create a system message to confirm the expense
+          const formattedMessage = formatExpenseMessage(parseResult);
+          
+          const systemMessage = await chatService.sendMessage(
+            `${formattedMessage}\n\n${JSON.stringify(parseResult)}`, 
             'system'
           );
-          setMessages(prev => [...prev, errorMessage]);
+          
+          // Add the system message to the UI
+          setMessages(prev => [...prev, systemMessage]);
+          
+          // Clear any previous errors
+          setError(null);
+        } else {
+          // If we got a response but no expense was parsed, just continue the conversation
+          console.log('Message was not an expense, continuing conversation');
         }
+      } catch (parseError) {
+        console.error('Error parsing expense:', parseError);
+        
+        // Add an error message to the UI
+        const errorMessage = await chatService.sendMessage(
+          'Sorry, I couldn\'t process that as an expense. Please check the format and try again.', 
+          'system'
+        );
+        setMessages(prev => [...prev, errorMessage]);
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -351,127 +297,90 @@ export default function Chat() {
           </div>
         )}
         
-        <div className="h-screen flex flex-col bg-gray-50 relative">
-          {/* Messages container with flex-grow and padding for input box */}
-          {/* Adding pb-20 to ensure space for the input box at the bottom */}
-          <div 
-            ref={messagesContainerRef}
-            className="flex-1 p-4 pb-20 overflow-y-auto flex flex-col justify-end"
-            style={{ height: 'calc(100vh - 80px)', minHeight: 'calc(100vh - 80px)' }}
-          >
-            {isLoading ? (
-              <div className="flex justify-center items-center h-full">
-                <LoadingAnimation />
-              </div>
-            ) : error ? (
-              <div className="text-center text-red-500 p-4">{error}</div>
-            ) : messages.length === 0 ? (
-              <div className="flex flex-col justify-center items-center h-full text-gray-500">
-                <DynamicIcon name="MessageSquare" className="w-12 h-12 mb-2 opacity-30" />
-                <p>No messages yet. Start a conversation!</p>
-              </div>
-            ) : (
-              <div className="space-y-4 max-w-lg mx-auto w-full mt-auto">
-                {messages.map(message => {
-                  // Determine message type
-                  const isUser = message.message_type === 'user';
-                  const isExpenseMessage = !isUser && message.content && (
-                    message.content.includes('Expense saved:') || 
-                    message.content.includes('✅ Expense saved:')
-                  );
-                  
-                  // Parse expense data for system messages
-                  const expenseData = isExpenseMessage ? parseExpenseData(message.id, message.content) : null;
-                  
-                  return (
-                    <div 
-                      key={message.id} 
-                      className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-                    >
-                      {isUser ? (
-                        <div 
-                          className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 relative"
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            setShowConfirmDelete({ id: message.id, type: 'message' });
-                          }}
-                        >
-                          <p className="whitespace-pre-line">{message.content}</p>
-                        </div>
-                      ) : isExpenseMessage && expenseData ? (
-                        <div className="w-3/4">
-                          <ExpenseCard 
-                            expense={expenseData} 
-                            messageId={message.id}
-                            onDelete={(expenseId, msgId) => {
-                              // Update messages state directly to remove the deleted expense message
-                              setMessages(prev => prev.filter(msg => msg.id !== msgId));
-                              
-                              // Show success notification
-                              setNotification({
-                                type: 'success',
-                                message: 'Expense deleted successfully.'
-                              });
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 whitespace-pre-line">
-                          <p>{message.content}</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                
-                {/* Show loading animation when processing a message */}
-                {isProcessing && (
-                  <div className="flex justify-start mb-4">
-                    <LoadingAnimation />
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-          </div>
-          
-          {/* Confirmation Dialog */}
-          {showConfirmDelete && showConfirmDelete.type === 'message' && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-lg">
-                <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                  Delete Message?
-                </h3>
-                <p className="text-gray-600 mb-5">
-                  This will permanently delete this message from the chat.
-                </p>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => setShowConfirmDelete(null)}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDelete}
-                    className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
-                    style={{ background: 'linear-gradient(45deg, #E74C3C, #cf8ef9, #fe9169)' }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+        <div className="h-full flex flex-col"> 
+          {error && (
+            <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert">
+              {error}
             </div>
           )}
           
-          {/* Input - Fixed position above the navbar */}
-          <div className="fixed bottom-[70px] left-0 right-0 p-4 bg-gray-50 border-t border-gray-100 z-10">
+          {/* Messages Area or Loading State */}
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <LoadingAnimation fullPage={true} text="Loading messages..." type="dots" />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={messagesContainerRef}>
+              {messages.map(message => {
+                // Determine message type
+                const isUser = message.message_type === 'user';
+                const isExpenseMessage = !isUser && message.content && (
+                  message.content.includes('Expense saved:') || 
+                  message.content.includes('✅ Expense saved:')
+                );
+                
+                // Parse expense data for system messages
+                const expenseData = isExpenseMessage ? parseExpenseData(message.id, message.content) : null;
+                
+                return (
+                  <div 
+                    key={message.id} 
+                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {isUser ? (
+                      <div 
+                        className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 relative"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setShowConfirmDelete({ id: message.id, type: 'message' });
+                        }}
+                      >
+                        <p className="whitespace-pre-line">{message.content}</p>
+                      </div>
+                    ) : isExpenseMessage && expenseData ? (
+                      <div className="w-3/4">
+                        <ExpenseCard 
+                          expense={expenseData} 
+                          messageId={message.id}
+                          onDelete={(expenseId, msgId) => {
+                            // Update messages state directly to remove the deleted expense message
+                            setMessages(prev => prev.filter(msg => msg.id !== msgId));
+                            
+                            // Show success notification
+                            setNotification({
+                              type: 'success',
+                              message: 'Expense deleted successfully.'
+                            });
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 whitespace-pre-line">
+                        <p>{message.content}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              
+              {/* Show loading animation when processing a message */}
+              {isProcessing && (
+                <div className="flex justify-start mb-4">
+                  <LoadingAnimation size="small" />
+                </div>
+              )}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+          
+          {/* Input - MODIFIED: No longer fixed, part of the flex column */}
+          <div className="p-4 bg-gray-50 border-t border-gray-100">
             <form onSubmit={handleSendMessage} className="flex space-x-2">
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="What did you buy? Give me some details."
+                placeholder="What did you buy?"
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 disabled={isProcessing}
               />
@@ -482,12 +391,8 @@ export default function Chat() {
                 disabled={isProcessing || !inputText.trim()}
               >
                 {isProcessing ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <span className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></span>
                   </span>
                 ) : (
                   <Send className="w-5 h-5" />
@@ -496,6 +401,35 @@ export default function Chat() {
             </form>
           </div>
         </div>
+        
+        {/* Confirmation Dialog */}
+        {showConfirmDelete && showConfirmDelete.type === 'message' && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-lg">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                Delete Message?
+              </h3>
+              <p className="text-gray-600 mb-5">
+                This will permanently delete this message from the chat.
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowConfirmDelete(null)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
+                  style={{ background: 'linear-gradient(45deg, #E74C3C, #cf8ef9, #fe9169)' }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Layout>
     </ProtectedRoute>
   );

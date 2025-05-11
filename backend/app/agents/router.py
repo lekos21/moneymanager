@@ -55,15 +55,18 @@ def parse_expense(query: ExpenseQuery, current_user: dict = Depends(get_current_
         user_id = current_user["user_id"]
         print(f"User ID: {user_id}")
         
-        # Parse the expense information using our AI parser
+        # Initialize Firestore client before calling the parser
+        db = firestore.Client()
+
+        # Parse the expense information using our AI parser, passing the db client
         print(f"Calling AI parser with text: '{query.text}'")
-        result = ai_parse_expense(query.text, user_id)
+        result = ai_parse_expense(query.text, user_id, db_client=db)
         print(f"AI parser result: {result}")
         
         # If save_to_db is true, save the expense to Firestore
         if query.save_to_db:
             print(f"Saving expense to Firestore (save_to_db={query.save_to_db})")
-            db = firestore.Client()
+            # db client is already initialized
             doc_ref = db.collection('expenses').add(result)
             expense_id = doc_ref[1].id
             print(f"Expense saved with ID: {expense_id}")

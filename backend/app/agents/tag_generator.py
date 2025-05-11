@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field, validator
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -16,7 +16,8 @@ class TagData(BaseModel):
     name: str = Field(description="The display name for the tag (capitalized)")
     facet: str = Field(description="The facet of the tag (area or context)")
     synonyms: List[str] = Field(description="List of synonyms for the tag (3-6 words)")
-    icon: str = Field(description="Name of a Lucide React icon to represent this tag")
+    icon: str = Field(description="Name of a Font Awesome icon (e.g., 'shopping-cart', 'coffee', 'tag')")
+    colors: Dict[str, str] = Field(description="Color information for the tag in various formats")
     
     # Validate facet is either 'area' or 'context'
     @validator('facet')
@@ -30,6 +31,15 @@ class TagData(BaseModel):
     def synonyms_length(cls, v):
         if len(v) < 3 or len(v) > 6:
             raise ValueError("Synonyms must contain between 3 and 6 items")
+        return v
+        
+    # Validate colors has all required fields
+    @validator('colors')
+    def colors_must_have_required_fields(cls, v):
+        required_fields = ['hex', 'bgHex', 'textHex']
+        for field in required_fields:
+            if field not in v:
+                raise ValueError(f"Colors must include '{field}'")
         return v
 
 def create_tag_generator():
@@ -55,15 +65,36 @@ def create_tag_generator():
         template="""
         You are an AI assistant that generates tag information for an expense tracking system.
         
-        Given a tag_id and facet, generate a structured tag with appropriate synonyms and a suitable Lucide React icon.
+        Given a tag_id and facet, generate a structured tag with appropriate synonyms, a suitable Font Awesome icon, and color information.
         
         For the tag name, capitalize the first letter of each word.
         For synonyms, generate 3-6 related terms that are semantically similar to the tag.
-        For the icon, select an appropriate Lucide React icon name
+        For the icon, select an appropriate Font Awesome icon name (e.g., 'shopping-cart', 'coffee', 'tag').
+        The icon name should be in kebab-case and lowercase if applicable (e.g., 'shopping-cart' not 'ShoppingCart').
+        
+        For colors, provide a consistent color scheme that semantically matches the tag's meaning using hex color codes:
+        - 'hex': The main color for borders and highlights (e.g., '#f97316' for orange-500)
+        - 'bgHex': A lighter background color (e.g., '#fff7ed' for orange-50)
+        - 'textHex': A color for text that contrasts well with bgHex (e.g., '#ea580c' for orange-600)
+        
+        Choose colors that are semantically appropriate for the tag:
+        - Food/Dining: Orange shades (#f97316, orange-500)
+        - Shopping: Purple shades (#a855f7, purple-500)
+        - Entertainment: Red shades (#ef4444, red-500)
+        - Travel: Blue shades (#3b82f6, blue-500)
+        - Health: Green shades (#22c55e, green-500)
+        - Utilities/Home: Yellow shades (#eab308, yellow-500)
+        - Education: Blue shades (#2563eb, blue-600)
+        - Personal: Indigo shades (#6366f1, indigo-500)
+        - Gifts: Pink shades (#ec4899, pink-500)
         
         Examples:
-        - For tag_id "restaurant" (facet: area), icon might be "Utensils"
-        - For tag_id "gift" (facet: context), icon might be "Gift"
+        - For tag_id "restaurant" (facet: area):
+          - icon: "utensils"
+          - colors: {{ "hex": "#fb923c", "bgHex": "#fff7ed", "textHex": "#ea580c" }}
+        - For tag_id "gift" (facet: context):
+          - icon: "gift"
+          - colors: {{ "hex": "#ec4899", "bgHex": "#fdf2f8", "textHex": "#db2777" }}
         
         {format_instructions}
         
@@ -123,7 +154,12 @@ def generate_tag(tag_id: str, facet: str) -> dict:
             "name": tag_id.capitalize(),
             "facet": facet,
             "synonyms": [f"{tag_id}-related-1", f"{tag_id}-related-2", f"{tag_id}-related-3"],
-            "icon": "Tag",  # Default icon
+            "icon": "tag",  # Default Font Awesome icon
+            "colors": {
+                "hex": "#d1d5db",
+                "bgHex": "#f9fafb",
+                "textHex": "#4b5563"
+            },
             "embedding": [],
             "created_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "active": True

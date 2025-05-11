@@ -6,6 +6,7 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+from google.cloud import firestore
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,6 +18,7 @@ class ExpenseData(BaseModel):
     area_tags: List[str] = Field(description="Tags that categorize the expense area (e.g., food, clothing, transportation)", default=[])
     context_tags: List[str] = Field(description="Optional tags that provide additional context or purpose (e.g., gift, personal, vacation)", default=[])
     short_text: str = Field(description="A short description of what was purchased (e.g., 'shoes', 'dinner', 'movie ticket')")
+    main_tag_icon: Optional[str] = Field(default=None, description="Font Awesome icon name for the primary area tag")
     
     # Add validation to ensure amount is positive
     @validator('amount')
@@ -88,13 +90,14 @@ def create_expense_parser():
     
     return prompt_and_model, parser
 
-def parse_expense(text: str, user_id: str) -> dict:
+def parse_expense(text: str, user_id: str, db_client: firestore.Client) -> dict:
     """
     Parse expense information from text and return a structured expense object
     
     Args:
         text: The text to parse expense information from
         user_id: The ID of the user making the request
+        db_client: Firestore client instance for database operations
         
     Returns:
         A dictionary containing the parsed expense information
@@ -123,8 +126,27 @@ def parse_expense(text: str, user_id: str) -> dict:
         
         # Always use current timestamp (fix deprecated warning)
         result_dict["timestamp"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        # Fetch icon for the first area_tag
+        result_dict["main_tag_icon"] = "tag" # Default icon
+        if result_dict.get("area_tags") and len(result_dict["area_tags"]) > 0:
+            first_area_tag_id = result_dict["area_tags"][0].lower() # Assuming tag_ids are stored in lowercase
+            try:
+                tag_ref = db_client.collection('tags').document(first_area_tag_id)
+                tag_doc = tag_ref.get()
+                if tag_doc.exists:
+                    tag_data = tag_doc.to_dict()
+                    if tag_data and 'icon' in tag_data:
+                        result_dict["main_tag_icon"] = tag_data['icon']
+                        print(f"Found icon '{tag_data['icon']}' for tag '{first_area_tag_id}'")
+                    else:
+                        print(f"Tag '{first_area_tag_id}' found but has no icon field.")
+                else:
+                    print(f"Tag '{first_area_tag_id}' not found in Firestore.")
+            except Exception as e:
+                print(f"Error fetching tag '{first_area_tag_id}' from Firestore: {str(e)}")
         
-        print(f"Final result: {result_dict}")
+        print(f"Final result with icon: {result_dict}")
         return result_dict
     except Exception as e:
         # Print the error for debugging
@@ -141,7 +163,8 @@ def parse_expense(text: str, user_id: str) -> dict:
             "raw_text": text,
             "area_tags": [],
             "context_tags": [],
-            "short_text": "generic purchase"
+            "short_text": "generic purchase",
+            "main_tag_icon": "tag" # Default icon for fallback
         }
         print(f"Returning fallback: {fallback}")
         return fallback

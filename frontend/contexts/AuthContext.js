@@ -21,8 +21,17 @@ export function AuthProvider({ children }) {
   const router = useRouter();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        // Get the Firebase ID token and store it for API access
+        try {
+          const token = await firebaseUser.getIdToken();
+          console.log('[AuthContext] Got Firebase ID token, storing in localStorage');
+          localStorage.setItem('token', token);
+        } catch (tokenError) {
+          console.error('[AuthContext] Error getting Firebase ID token:', tokenError);
+        }
+      
         setUser({
           id: firebaseUser.uid,
           email: firebaseUser.email || '',
@@ -30,11 +39,12 @@ export function AuthProvider({ children }) {
           photoURL: firebaseUser.photoURL || undefined,
         });
       } else {
+        localStorage.removeItem('token'); // Clear token on logout
         setUser(null);
       }
       setLoading(false);
     });
-
+  
     return unsubscribe;
   }, []);
 

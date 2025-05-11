@@ -290,9 +290,8 @@ export default function Home() {
                           key={expense.id || `${expense.timestamp}-${expense.amount}-${Math.random()}`}
                           className="bg-white rounded-2xl shadow-md p-3 flex items-center justify-between"
                         >
-                          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm"
-                            style={{ background: 'linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169)' }}>
-                            <DynamicIcon iconName={categoryName} size={20} className="text-white" />
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm">
+                            <DynamicIcon iconName={expense.main_tag_icon || categoryName} size={20} className="text-gray-700" />
                           </div>
                           <div className="flex-1 ml-3">
                             <p className="font-medium text-gray-800">{expense.short_text}</p>
@@ -361,27 +360,6 @@ function getCategoryColor(category) {
   };
   
   return colors[category] || 'bg-gray-500';
-}
-
-function getCategoryIcon(category) {
-  switch (category) {
-    case 'Food':
-      return '🍽️';
-    case 'Transport':
-      return '🚗';
-    case 'Shopping':
-      return '🛍️';
-    case 'Entertainment':
-      return '🎬';
-    case 'Bills':
-      return '💡';
-    case 'Health':
-      return '💊';
-    case 'Personal':
-      return '👤';
-    default:
-      return '💰';
-  }
 }
 
 function formatDate(dateString) {

@@ -9,6 +9,7 @@ router = APIRouter(tags=["Users"])
 class UserUpdate(BaseModel):
     """Model for updating user data"""
     budget: Optional[float] = None
+    preferred_currency: Optional[str] = None
     # Add more fields here as needed for future customizations
     # currency_preference: Optional[str] = None
     # theme: Optional[str] = None

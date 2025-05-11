@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { useAuth } from '../contexts/AuthContext'
+import DynamicIcon from './DynamicIcon'
 
 export default function Layout({ children }) {
   const router = useRouter()
@@ -32,6 +33,17 @@ export default function Layout({ children }) {
 }
 
 function NavItem({ href, icon, active }) {
+  // Helper function to map icon names to Font Awesome icon names
+  const getIconName = (iconType) => {
+    switch (iconType) {
+      case 'home': return 'house';
+      case 'reports': return 'chart-simple';
+      case 'history': return 'clock-rotate-left';
+      case 'profile': return 'user';
+      case 'add': return 'plus';
+      default: return 'circle';
+    }
+  };
   // Special styling for the add/chat button
   if (icon === 'add') {
     return (
@@ -40,9 +52,10 @@ function NavItem({ href, icon, active }) {
           style={{
             background: 'linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169)'
           }}>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
+          <DynamicIcon 
+            iconName="plus" 
+            className="h-6 w-6 text-white" 
+          />
         </div>
       </Link>
     )
@@ -56,26 +69,11 @@ function NavItem({ href, icon, active }) {
             ? 'rgba(124, 58, 237, 0.15)' 
             : 'transparent'
         }}>
-        {icon === 'home' && (
-          <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2 : 1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-        )}
-        {icon === 'reports' && (
-          <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2 : 1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-          </svg>
-        )}
-        {icon === 'history' && (
-          <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2 : 1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        )}
-        {icon === 'profile' && (
-          <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${active ? 'text-purple-600' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 2 : 1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-        )}
+        <DynamicIcon 
+          iconName={getIconName(icon)}
+          className={`h-5 w-5 ${active ? 'text-purple-600' : 'text-gray-400'}`}
+          style={{ fontWeight: active ? 'bold' : 'normal' }}
+        />
       </div>
     </Link>
   )

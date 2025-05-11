@@ -30,11 +30,11 @@ const MonthlyExpenseChart = ({
       
       setChartOptions({
         grid: {
-          top: 15,
-          right: 5, 
-          bottom: 25,
-          left: 5,
-          containLabel: true
+          top: 20,
+          right: '1%', 
+          bottom: 30,
+          left: '1%',
+          containLabel: false
         },
         tooltip: {
           trigger: 'axis',
@@ -62,24 +62,28 @@ const MonthlyExpenseChart = ({
           data: xAxisData,
           axisLine: {
             lineStyle: {
-              color: 'rgba(255, 255, 255, 0.5)'
+              color: 'rgba(255, 255, 255, 0.5)',
+              width: 2
             }
           },
           axisLabel: {
             color: 'rgba(255, 255, 255, 0.8)',
             fontSize: 10,
-            interval: 3, // Show every 3rd day for better spacing
+            interval: 1,
             align: 'center',
             margin: 12
           },
           axisTick: {
-            show: false
+            show: true,
+            alignWithLabel: true,
+            lineStyle: {
+              color: 'rgba(255, 255, 255, 0.5)'
+            }
           }
         },
         yAxis: {
           type: 'value',
-          show: false,
-          max: maxValue * 1.2 // Add some padding at the top
+          show: false
         },
         series: [
           {
@@ -114,11 +118,11 @@ const MonthlyExpenseChart = ({
       
       setChartOptions({
         grid: {
-          top: 10,
-          right: 10, 
-          bottom: 30,
-          left: 10,
-          containLabel: true
+          top: 20, // Consistent with monthly
+          right: '1%', // Consistent with monthly 
+          bottom: 30, // Consistent with monthly
+          left: '1%', // Consistent with monthly
+          containLabel: false // Consistent with monthly
         },
         tooltip: {
           trigger: 'axis',
@@ -144,7 +148,8 @@ const MonthlyExpenseChart = ({
           data: xAxisData,
           axisLine: {
             lineStyle: {
-              color: 'rgba(255, 255, 255, 0.5)'
+              color: 'rgba(255, 255, 255, 0.5)',
+              width: 2 // Increased thickness
             }
           },
           axisLabel: {
@@ -152,13 +157,17 @@ const MonthlyExpenseChart = ({
             fontSize: 10
           },
           axisTick: {
-            show: false
+            show: true, // Show ticks
+            alignWithLabel: true, // Align ticks with labels
+            lineStyle: {
+              color: 'rgba(255, 255, 255, 0.5)' // Match axis line color
+            }
           }
         },
         yAxis: {
           type: 'value',
           show: false,
-          max: maxValue * 1.2 // Add some padding at the top
+          // max: maxValue * 1.2 // Removed for simplification and consistency
         },
         series: [
           {
@@ -229,7 +238,7 @@ const MonthlyExpenseChart = ({
       
       {/* ECharts Component */}
       <div className="mt-6">
-        <div className="h-36 -mx-2"> {/* Negative margin to allow full-width chart */}
+        <div className="h-36"> 
           <ReactECharts
             option={chartOptions}
             style={{ height: '100%', width: '100%' }}
