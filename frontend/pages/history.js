@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Head from 'next/head';
 import Link from 'next/link';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
-import { useTags } from '../contexts/TagsContext';
+import { useTags } from '../hooks/useTags';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import expenseService from '../services/expenseService';
 import ExpenseCard from '../components/ExpenseCard';
-import { getTagBgColor, getTagTextColor } from '../utils/tagUtils';
-import LoadingAnimation from '../components/LoadingAnimation';
+import PageErrorBoundary from '../components/PageErrorBoundary';
+import SkeletonCard from '../components/skeletons/SkeletonCard';
+import { useExpenses } from '../hooks/useExpenses';
 
 const formatDate = (dateString) => {
   const date = new Date(dateString);
@@ -21,26 +21,39 @@ const formatDate = (dateString) => {
 };
 
 export default function History() {
+  return (
+    <PageErrorBoundary pageName="expense history">
+      <HistoryContent />
+    </PageErrorBoundary>
+  );
+}
+
+function HistoryContent() {
   const { user } = useAuth();
   const { getTag } = useTags();
-  const [expenses, setExpenses] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [selectedTags, setSelectedTags] = useState({ areaTags: [], contextTags: [] });
-  const [availableTags, setAvailableTags] = useState({ areaTags: [], contextTags: [] });
   const [notification, setNotification] = useState(null);
-  const [totalAmount, setTotalAmount] = useState(0);
+  
+  // Use our custom hook for expenses data
+  const { expenses, isLoading, isError, mutate } = useExpenses();
 
-  const extractUniqueTags = (list) => {
+  // Extract unique tags from expenses - memoized for performance
+  const availableTags = useMemo(() => {
     const area = new Set(), context = new Set();
-    list.forEach(e => {
+    expenses.forEach(e => {
       if (Array.isArray(e.area_tags)) e.area_tags.forEach(t => area.add(t));
       if (Array.isArray(e.context_tags)) e.context_tags.forEach(t => context.add(t));
     });
     return { areaTags: [...area], contextTags: [...context] };
-  };
+  }, [expenses]);
+  
+  // Calculate total amount - memoized for performance
+  const totalAmount = useMemo(() => {
+    return expenses.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
+  }, [expenses]);
 
-  const getFilteredExpenses = () => {
+  // Get filtered expenses based on selected tags - memoized for performance
+  const filteredExpenses = useMemo(() => {
     if (!selectedTags.areaTags.length && !selectedTags.contextTags.length) return expenses;
     return expenses.filter(exp => {
       const hasArea = !selectedTags.areaTags.length ||
@@ -49,7 +62,7 @@ export default function History() {
         (exp.context_tags && selectedTags.contextTags.some(t => exp.context_tags.includes(t)));
       return hasArea && hasContext;
     });
-  };
+  }, [expenses, selectedTags.areaTags, selectedTags.contextTags]);
 
   const toggleTagSelection = (tag, type) => {
     setSelectedTags(prev => {
@@ -61,65 +74,30 @@ export default function History() {
     });
   };
 
-  const updateState = (deletedId) => {
-    const updated = expenses.filter(exp => exp.id !== deletedId);
-    setExpenses(updated);
-    setAvailableTags(extractUniqueTags(updated));
-    setTotalAmount(updated.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0));
-    setNotification({ type: 'success', message: 'Expense deleted successfully' });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
+  // Handle expense deletion
   const handleExpenseDeleted = (deletedExpenseId) => {
-    updateState(deletedExpenseId);
+    // Optimistically update the UI
+    mutate(expenses.filter(exp => exp.id !== deletedExpenseId), false);
+    
+    // Show success notification
+    setNotification({ type: 'success', message: 'Expense deleted successfully' });
   };
 
+  // Auto-hide notification after 3 seconds
   useEffect(() => {
-    if (!user) return;
-    const fetchExpenses = async () => {
-      try {
-        setIsLoading(true);
-        const data = await expenseService.getExpenses();
-        console.log('Raw expense data from API:', data);
-        
-        // Safety checks to ensure we have data to work with
-        if (!Array.isArray(data)) {
-          console.error('API did not return an array for expenses:', data);
-          setExpenses([]); 
-          setAvailableTags({ areaTags: [], contextTags: [] });
-          setTotalAmount(0);
-          setError('Failed to load expenses. Unexpected data format.');
-          setIsLoading(false);
-          return;
-        }
-
-        const validExpenses = data.filter(exp => exp && typeof exp.amount === 'number' && exp.timestamp);
-        const sortedExpenses = validExpenses.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        setExpenses(sortedExpenses);
-        setAvailableTags(extractUniqueTags(sortedExpenses));
-        
-        // Calculate total amount
-        const total = sortedExpenses.reduce((acc, curr) => acc + parseFloat(curr.amount || 0), 0);
-        setTotalAmount(total);
-        
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch expenses:', err);
-        setError('Failed to load expenses. Please try again later.');
-        setExpenses([]); 
-        setAvailableTags({ areaTags: [], contextTags: [] });
-        setTotalAmount(0);
-      }
-      setIsLoading(false);
-    };
-    fetchExpenses();
-  }, [user]);
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   return (
     <ProtectedRoute>
       <Layout>
         <Head>
-          <title>Expense History | MoneyManager</title>
+          <title>Expense History | Piggy</title>
         </Head>
         <div className="h-[calc(100vh-64px)] flex flex-col bg-white">
           {/* Header */}
@@ -187,12 +165,22 @@ export default function History() {
           {/* Main Content */}
           <div className="flex-1 overflow-y-auto p-4">
             {isLoading ? (
-              <div className="flex justify-center items-center h-full">
-                <LoadingAnimation fullPage={true} text="Loading expenses..." />                
+              <div className="space-y-4 max-w-lg mx-auto">
+                {[...Array(5)].map((_, i) => (
+                  <SkeletonCard key={i} hasHeader={true} hasFooter={true} />
+                ))}
               </div>
-            ) : error ? (
+            ) : isError ? (
               <div className="flex justify-center items-center h-full">
-                <p className="text-red-500">{error}</p>
+                <div className="text-center">
+                  <p className="text-red-500 mb-4">Failed to load expenses. Please try again.</p>
+                  <button 
+                    onClick={() => mutate()}
+                    className="btn-primary"
+                  >
+                    Retry
+                  </button>
+                </div>
               </div>
             ) : expenses.length === 0 ? (
               <div className="flex justify-center items-center h-full">
@@ -206,7 +194,7 @@ export default function History() {
             ) : (
               <AnimatePresence initial={false}>
                 <div className="space-y-3 max-w-lg mx-auto">
-                  {getFilteredExpenses().map(expense => (
+                  {filteredExpenses.map(expense => (
                     <motion.div
                       key={expense.id}
                       layout

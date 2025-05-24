@@ -2,17 +2,19 @@ import '../styles/globals.css'
 import { SWRConfig } from 'swr'
 import { AuthProvider } from '../contexts/AuthContext'
 import { TagsProvider } from '../contexts/TagsContext'
+import ErrorBoundary from '../components/ErrorBoundary'
 import Head from 'next/head'
 
 function MyApp({ Component, pageProps }) {
   return (
-    <AuthProvider>
-      <TagsProvider>
-        <Head>
-          <title>MoneyManager - Track Your Expenses</title>
-          <meta name="description" content="A modern expense tracking application" />
-        </Head>
-        <SWRConfig value={{ 
+    <ErrorBoundary>
+      <AuthProvider>
+        <TagsProvider>
+          <Head>
+            <title>Piggy - Money Tracker</title>
+            <meta name="description" content="A modern expense tracking application" />
+          </Head>
+          <SWRConfig value={{ 
           fetcher: (resource, init) => {
             // Get token from localStorage
             const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -44,6 +46,7 @@ function MyApp({ Component, pageProps }) {
         </SWRConfig>
       </TagsProvider>
     </AuthProvider>
+  </ErrorBoundary>
   )
 }
 

@@ -1,6 +1,6 @@
 {
-  "name": "MoneyManager",
-  "short_name": "MoneyManager",
+  "name": "Piggy - Money Tracker",
+  "short_name": "Piggy",
   "icons": [
     {
       "src": "/favicon.ico",

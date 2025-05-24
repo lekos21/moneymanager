@@ -1,156 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import expenseService from '../services/expenseService';
-import userService from '../services/userService';
 import DynamicIcon from '../components/DynamicIcon';
 import LoadingAnimation from '../components/LoadingAnimation';
-import MonthlyExpenseChart from '../components/MonthlyExpenseChart';
+import SkeletonCard from '../components/skeletons/SkeletonCard';
+import SkeletonChart from '../components/skeletons/SkeletonChart';
+import { useExpenses, useExpenseStats } from '../hooks/useExpenses';
+import { useUserData } from '../hooks/useUserData';
+
+// Dynamically import chart component for better performance
+const MonthlyExpenseChart = dynamic(
+  () => import('../components/MonthlyExpenseChart'),
+  { loading: () => <SkeletonChart /> }
+);
 
 export default function Home() {
   const router = useRouter();
-  const { user, loading } = useAuth();
-  const [expenses, setExpenses] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [monthlyTotal, setMonthlyTotal] = useState(0);
-  const [weeklyTotal, setWeeklyTotal] = useState(0);
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('monthly');
-  const [error, setError] = useState(null);
-  const [dailyExpenses, setDailyExpenses] = useState([]);
-  const [weeklyExpenses, setWeeklyExpenses] = useState([]);
-  const [budget, setBudget] = useState(null); // Will be fetched from the backend
   
-  useEffect(() => {
-    const fetchExpenses = async () => {
-      if (!user) return;
-      
-      try {
-        setIsLoading(true);
-        // Fetch expenses and user data in parallel
-        const [data, userData] = await Promise.all([
-          expenseService.getExpenses(),
-          userService.getUserData()
-        ]);
-        
-        // Set budget from user data if available
-        if (userData && userData.budget) {
-          setBudget(userData.budget);
-        }
-        
-        // Sort expenses by date (newest first)
-        const sortedExpenses = [...data].sort((a, b) => 
-          new Date(b.timestamp || b.date) - new Date(a.timestamp || a.date)
-        );
-        
-        setExpenses(sortedExpenses);
-        
-        // Calculate date ranges
-        const now = new Date();
-        const currentMonth = now.getMonth();
-        const currentYear = now.getFullYear();
-        
-        // For weekly calculation
-        const oneWeekAgo = new Date();
-        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-        
-        // Filter monthly expenses
-        const monthlyExpenses = data.filter(expense => {
-          const expenseDate = new Date(expense.timestamp || expense.date);
-          return expenseDate.getMonth() === currentMonth && 
-                 expenseDate.getFullYear() === currentYear;
-        });
-        
-        // Filter weekly expenses
-        const weeklyExpenses = data.filter(expense => {
-          const expenseDate = new Date(expense.timestamp || expense.date);
-          return expenseDate >= oneWeekAgo;
-        });
-        
-        // Calculate monthly total
-        const monthlyTotal = monthlyExpenses.reduce((sum, expense) => 
-          sum + (parseFloat(expense.amount) || 0), 0
-        );
-        
-        // Calculate weekly total
-        const weeklyTotal = weeklyExpenses.reduce((sum, expense) => 
-          sum + (parseFloat(expense.amount) || 0), 0
-        );
-        
-        setMonthlyTotal(monthlyTotal);
-        setWeeklyTotal(weeklyTotal);
-        
-        // Generate daily spending data for the current month
-        const dailySpendingMap = {};
-        
-        // Initialize all days of the current month
-        const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-        for (let i = 1; i <= daysInMonth; i++) {
-          const dayStr = i.toString();
-          dailySpendingMap[dayStr] = { day: dayStr, amount: 0 };
-        }
-        
-        // Fill in the actual spending data
-        monthlyExpenses.forEach(expense => {
-          const expenseDate = new Date(expense.timestamp || expense.date);
-          const day = expenseDate.getDate().toString();
-          if (dailySpendingMap[day]) {
-            dailySpendingMap[day].amount += parseFloat(expense.amount) || 0;
-          }
-        });
-        
-        // Convert to array and sort by day
-        const dailySpendingArray = Object.values(dailySpendingMap)
-          .sort((a, b) => parseInt(a.day) - parseInt(b.day));
-        
-        setDailyExpenses(dailySpendingArray);
-        
-        // Generate weekly spending data
-        const weeklySpendingMap = {};
-        
-        // Get the start of the week (Sunday)
-        const startOfWeek = new Date(now);
-        startOfWeek.setDate(now.getDate() - now.getDay());
-        
-        // Initialize all days of the current week
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        for (let i = 0; i < 7; i++) {
-          const day = new Date(startOfWeek);
-          day.setDate(startOfWeek.getDate() + i);
-          weeklySpendingMap[i] = { 
-            day: dayNames[i], 
-            date: new Date(day), 
-            amount: 0 
-          };
-        }
-        
-        // Fill in the actual spending data
-        weeklyExpenses.forEach(expense => {
-          const expenseDate = new Date(expense.timestamp || expense.date);
-          const dayIndex = expenseDate.getDay(); // 0 = Sunday, 6 = Saturday
-          if (weeklySpendingMap[dayIndex]) {
-            weeklySpendingMap[dayIndex].amount += parseFloat(expense.amount) || 0;
-          }
-        });
-        
-        // Convert to array
-        const weeklySpendingArray = Object.values(weeklySpendingMap);
-        
-        setWeeklyExpenses(weeklySpendingArray);
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch expenses:', err);
-        setError('Failed to load expenses');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    fetchExpenses();
-  }, [user]);
+  // Use SWR hooks for data fetching
+  const { expenses, isLoading, isError } = useExpenses();
+  const { userData } = useUserData();
+  
+  // Calculate expense statistics using our custom hook
+  const { 
+    monthlyTotal, 
+    weeklyTotal, 
+    dailyExpenses, 
+    weeklyExpenses 
+  } = useExpenseStats(expenses);
+  
+  // Get budget from user data
+  const budget = userData?.budget;
   
   // Mock income for now - in a real app, this would come from an API
   const totalIncome = 2500.00;
@@ -165,7 +52,7 @@ export default function Home() {
     <ProtectedRoute>
       <Layout>
         <Head>
-          <title>Dashboard | MoneyManager</title>
+          <title>Dashboard | Piggy</title>
         </Head>
         
         <div className="px-4 py-6 max-w-lg mx-auto">
@@ -173,59 +60,52 @@ export default function Home() {
           <header className="mb-6">
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-2xl font-bold text-gray-800">Welcome!</h1>
-                <p className="text-gray-500">
-                  {user && (user.displayName || user.email)}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-800">
-                  {(() => {
-                    const now = new Date();
-                    const options = { month: 'long', day: 'numeric' };
-                    const dateStr = now.toLocaleDateString('en-US', options);
-                    const hours = now.getHours();
-                    const minutes = now.getMinutes().toString().padStart(2, '0');
-                    return `${dateStr}, ${hours}:${minutes}`;
-                  })()}
-                </p>
+                <h1 className="text-2xl font-bold text-gray-800">Welcome {user && (user.displayName || user.email)}!</h1>
               </div>
             </div>
           </header>
           
           {/* Tabs */}
-          <div className="flex bg-white rounded-full p-1 shadow-md mb-6 relative overflow-hidden">
-            <button
-              onClick={() => setActiveTab('monthly')}
-              className={`flex-1 py-2 rounded-full text-sm font-medium transition-all relative z-10 ${
-                activeTab === 'monthly'
-                  ? 'text-white font-semibold'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-              style={activeTab === 'monthly' ? { background: 'linear-gradient(135deg, #42A5F5, #cf8ef9, #fe9169)' } : {}}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setActiveTab('weekly')}
-              className={`flex-1 py-2 rounded-full text-sm font-medium transition-all relative z-10 ${
-                activeTab === 'weekly'
-                  ? 'text-white font-semibold'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-              style={activeTab === 'weekly' ? { background: 'linear-gradient(135deg, #42A5F5, #cf8ef9, #fe9169)' } : {}}
-            >
-              Weekly
-            </button>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Dashboard</h2>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => setActiveTab('monthly')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${activeTab === 'monthly' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}`}
+              >
+                Monthly
+              </button>
+              <button 
+                onClick={() => setActiveTab('weekly')}
+                className={`px-3 py-1 rounded-full text-sm font-medium ${activeTab === 'weekly' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}`}
+              >
+                Weekly
+              </button>
+            </div>
           </div>
           
           {isLoading ? (
-            <div className="bg-white rounded-3xl shadow-md p-6 flex justify-center items-center h-64">
-              <LoadingAnimation />
+            <div className="space-y-6">
+              <SkeletonChart height="h-64" />
+              <div className="grid grid-cols-2 gap-4">
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
+              <div className="space-y-3">
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </div>
             </div>
-          ) : error ? (
-            <div className="bg-white rounded-3xl shadow-md p-6 text-center">
-              <p className="text-red-500">{error}</p>
+          ) : isError ? (
+            <div className="text-center py-10">
+              <p className="text-red-500">Failed to load expenses. Please try again later.</p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="mt-4 btn-primary"
+              >
+                Try Again
+              </button>
             </div>
           ) : (
             <div className="space-y-6">
@@ -311,8 +191,7 @@ export default function Home() {
                   <Link href="/chat" legacyBehavior>
                     <a className="block">
                       <div className="bg-white rounded-2xl shadow-md p-4 flex flex-col items-center justify-center space-y-2 cursor-pointer">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                          style={{ background: 'linear-gradient(45deg, #42A5F5, #cf8ef9)' }}>
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gradient-primary">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                           </svg>
@@ -327,8 +206,7 @@ export default function Home() {
                   <Link href="/reports" legacyBehavior>
                     <a className="block">
                       <div className="bg-white rounded-2xl shadow-md p-4 flex flex-col items-center justify-center space-y-2 cursor-pointer">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center"
-                          style={{ background: 'linear-gradient(45deg, #cf8ef9, #fe9169)' }}>
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center bg-gradient-secondary">
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>

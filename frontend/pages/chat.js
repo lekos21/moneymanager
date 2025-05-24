@@ -1,67 +1,92 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, memo, createContext, useContext } from 'react';
 import Head from 'next/head';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import chatService from '../services/chatService';
 import expenseService from '../services/expenseService';
-import tagService from '../services/tagService';
+import chatService from '../services/chatService';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DynamicIcon from '../components/DynamicIcon';
 import ExpenseCard, { getCurrencySymbol } from '../components/ExpenseCard';
 import { Send } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useMessages } from '../hooks/useMessages';
+import { useTagResolver } from '../hooks/useTags';
+import SkeletonMessage, { SkeletonMessageGroup } from '../components/skeletons/SkeletonMessage';
 
-// Chat component constants and helper functions
+// Create a context to share the parseExpenseData function
+const MessageContext = createContext(null);
+
+// Memoized message component for better performance
+const ExpenseMessage = memo(({ message, onDelete }) => {
+  // Get parseExpenseData from context and expenseDataCache
+  const { parseExpenseData, expenseDataCache } = useContext(MessageContext);
+  
+  // Memoize the parsed expense data to prevent re-parsing on every render
+  const expense = useMemo(() => {
+    // First check if we have this message's expense data in our persistent cache
+    if (expenseDataCache && expenseDataCache[message.id]) {
+      return expenseDataCache[message.id];
+    }
+    
+    // Then check if expense data is directly available in the message
+    if (message.expenseData) {
+      return message.expenseData;
+    }
+    
+    // Otherwise try to parse it from the content
+    return parseExpenseData(message.id, message.content);
+  }, [message.id, message.content, parseExpenseData, message.expenseData, expenseDataCache]);
+  
+  if (!expense) return null;
+  
+  return (
+    <ExpenseCard 
+      expense={expense} 
+      messageId={message.id} 
+      onDelete={onDelete} 
+      fullWidth={true} 
+    />
+  );
+});
 
 export default function Chat() {
   const { user } = useAuth();
-  const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState(null);
   const [showConfirmDelete, setShowConfirmDelete] = useState(null);
   const [notification, setNotification] = useState(null);
-  const [tagCache, setTagCache] = useState({});
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-
-  // Simple function to fetch the latest messages
-  const fetchMessages = async () => {
-    try {
-      setIsLoading(true);
-      const data = await chatService.getMessages(30);
-      setMessages(data);
-      setError(null);
-    } catch (err) {
-      console.error('Failed to fetch messages:', err);
-      setError('Failed to load messages. Please try again later.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch messages when component mounts or user changes
-  useEffect(() => {
-    if (user) {
-      fetchMessages();
-    }
-  }, [user]);
+  
+  // Store expense data in a persistent state
+  const [expenseDataCache, setExpenseDataCache] = useState({});
+  
+  // Use our custom hook for messages
+  const { 
+    messages, 
+    isLoading, 
+    isProcessing, 
+    isError: error,
+    sendMessage,
+    deleteMessage,
+    parseExpenseData,
+    mutate
+  } = useMessages();
 
   // Scroll to bottom when messages change or when initially loaded
   useEffect(() => {
     if (!isLoading && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isLoading]);
   
   // Additional effect to ensure immediate scroll to bottom on initial load
   useEffect(() => {
-    if (messagesEndRef.current && messages.length > 0) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, []);
-  
+
   // Auto-hide notification after 3 seconds
   useEffect(() => {
     if (notification) {
@@ -72,160 +97,82 @@ export default function Chat() {
     }
   }, [notification]);
 
-  // Function to fetch tag details and cache them
-  const getTagDetails = async (tagId, facet = 'area') => {
-    // Check if we already have this tag in cache
-    const cacheKey = `${facet}-${tagId}`;
-    if (tagCache[cacheKey]) {
-      return tagCache[cacheKey];
-    }
-    
-    try {
-      // Fetch tag details from API
-      const tagData = await tagService.getTag(tagId, facet);
-      
-      // Update cache
-      setTagCache(prev => ({
-        ...prev,
-        [cacheKey]: tagData
-      }));
-      
-      return tagData;
-    } catch (error) {
-      console.error(`Error fetching tag ${tagId}:`, error);
-      return null;
-    }
-  };
-
-  // Cache for parsed expense data to avoid re-parsing on every render
-  const [parsedExpenseCache, setParsedExpenseCache] = useState({});
-  
-  // Parse expense data directly from message content
-  const parseExpenseData = (messageId, content) => {
-    // Check if we've already parsed this message
-    if (parsedExpenseCache[messageId]) {
-      return parsedExpenseCache[messageId];
-    }
-    
-    try {
-      if (!content.includes('Expense saved:')) return null;
-      
-      // Try to extract the JSON part of the message if available
-      const jsonStartIndex = content.indexOf('{');
-      const jsonEndIndex = content.lastIndexOf('}');
-      
-      let expenseData = null;
-      
-      if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
-        // Extract and parse JSON
-        const jsonStr = content.substring(jsonStartIndex, jsonEndIndex + 1);
-        expenseData = JSON.parse(jsonStr);
-      } else {
-        // Fallback to regex-based parsing if JSON not found
-        const amountMatch = content.match(/Amount: ([\d.]+) ([A-Z]{3})/);
-        const dateMatch = content.match(/Date: (.+?)(?=\n|$)/);
-        const tagsMatch = content.match(/Tags: (.+?)(?=\n|$)/);
-        
-        if (amountMatch) {
-          expenseData = {
-            amount: parseFloat(amountMatch[1]),
-            currency: amountMatch[2],
-            timestamp: dateMatch ? new Date(dateMatch[1]).toISOString() : new Date().toISOString(),
-            tags: tagsMatch ? tagsMatch[1].split(', ') : []
-          };
-        }
-      }
-      
-      if (expenseData) {
-        // Cache the parsed data
-        setParsedExpenseCache(prev => ({
-          ...prev,
-          [messageId]: expenseData
-        }));
-        
-        return expenseData;
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error parsing expense data:', error);
-      return null;
-    }
-  };
-
-  // Format expense for display
-  const formatExpenseMessage = (expense) => {
-    const currencySymbol = getCurrencySymbol(expense.currency);
-    return `💰 Expense saved: ${expense.short_text || 'Item'} - ${currencySymbol}${expense.amount}`;
-  };
-
   // Send message and process expense
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    const message = inputText.trim();
-    if (!message) return;
     
-    setInputText('');
-    setIsProcessing(true);
+    if (!inputText.trim() || isProcessing) return;
     
     try {
-      // First add the user message to the UI
-      const userMessage = {
-        id: `temp-${Date.now()}`,
-        content: message,
-        timestamp: new Date().toISOString(),
-        message_type: 'user'
-      };
+      // Use our custom hook to send the message
+      await sendMessage(inputText);
+      setInputText('');
       
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Save the user message to the database
-      const savedUserMessage = await chatService.sendMessage(message, 'user');
-      
-      // Replace the temporary message with the saved one
-      setMessages(prev => prev.map(msg => 
-        msg.id === userMessage.id ? savedUserMessage : msg
-      ));
-      
-      // Try to parse the message as an expense
+      // After sending user message, try to parse it as an expense
       try {
-        const parseResult = await chatService.parseExpense(message, true);
+        const expenseData = await chatService.parseExpense(inputText);
         
-        if (parseResult && parseResult.id) {
-          console.log('Expense parsed successfully:', parseResult);
+        if (expenseData && expenseData.id) {
+          console.log('Expense parsed successfully:', expenseData);
           
-          // Create a system message to confirm the expense
-          const formattedMessage = formatExpenseMessage(parseResult);
+          // Create a clean confirmation message
+          const responseText = `✅ Expense saved: ${expenseData.short_text || 'Item'} - ${getCurrencySymbol(expenseData.currency)}${expenseData.amount}`;
           
-          const systemMessage = await chatService.sendMessage(
-            `${formattedMessage}\n\n${JSON.stringify(parseResult)}`, 
-            'system'
-          );
+          // Create a custom message object with the expense data directly attached
+          const expenseMessage = {
+            content: responseText,
+            message_type: 'system',
+            expenseData: expenseData, // Attach expense data directly
+            id: `expense-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            direction: 'incoming'
+          };
           
-          // Add the system message to the UI
-          setMessages(prev => [...prev, systemMessage]);
+          // Send the message to the server first
+          const serverResponse = await chatService.sendMessage(responseText, 'system', expenseData);
           
-          // Clear any previous errors
-          setError(null);
+          // Then update our local cache with both the server response and our custom message
+          // We'll use the server message ID if available
+          const messageId = serverResponse?.id || expenseMessage.id;
+          const finalExpenseMessage = {
+            ...expenseMessage,
+            id: messageId
+          };
+          
+          // Store the expense data in our persistent cache using the message ID as the key
+          setExpenseDataCache(prev => ({
+            ...prev,
+            [messageId]: expenseData
+          }));
+          
+          // Add our custom message to the cache and prevent revalidation
+          mutate(prevMessages => {
+            // Filter out any temporary messages with the same content
+            const filteredMessages = prevMessages?.filter(msg => 
+              !(msg.content === responseText && !msg.id.startsWith('expense-'))
+            ) || [];
+            
+            return [...filteredMessages, finalExpenseMessage];
+          }, false); // false means don't revalidate with the server
         } else {
-          // If we got a response but no expense was parsed, just continue the conversation
           console.log('Message was not an expense, continuing conversation');
+          
+          // Send a system response for non-expense messages
+          await sendMessage("I understand. Let me know if you have any expenses to track!", 'system');
         }
-      } catch (parseError) {
-        console.error('Error parsing expense:', parseError);
+      } catch (expenseError) {
+        console.error('Error parsing expense:', expenseError);
         
-        // Add an error message to the UI
-        const errorMessage = await chatService.sendMessage(
-          'Sorry, I couldn\'t process that as an expense. Please check the format and try again.', 
-          'system'
-        );
-        setMessages(prev => [...prev, errorMessage]);
+        // Send an error response
+        await sendMessage("Sorry, I couldn't process that as an expense. Please check the format and try again.", 'system');
       }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
-    } finally {
-      setIsProcessing(false);
+      
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      setNotification({
+        type: 'error',
+        message: 'Failed to send message. Please try again.'
+      });
     }
   };
 
@@ -233,203 +180,200 @@ export default function Chat() {
   const handleDelete = async () => {
     if (!showConfirmDelete) return;
     
-    const { id, type } = showConfirmDelete;
-    console.log('Handling delete action:', { id, type });
+    const { type, id: msgId, expenseId } = showConfirmDelete;
     
     try {
-      if (type === 'expense') {
-        // Delete the expense from the database
-        await expenseService.deleteExpense(id);
-        
-        // Update messages to reflect deletion
-        setMessages(prev => prev.filter(msg => {
-          // Check if this message contains the deleted expense
-          if (msg.message_type === 'system' && msg.content) {
-            const expenseData = parseExpenseData(msg.content);
-            return !(expenseData && expenseData.id === id);
-          }
-          return true;
-        }));
-        
-        // Show success notification
-        setNotification({
-          type: 'success',
-          message: 'Expense deleted successfully.'
-        });
-      } else {
-        // Delete the message from the chat history
-        await chatService.deleteMessage(id);
-        
-        // Update messages state
-        setMessages(prev => prev.filter(msg => msg.id !== id));
-        
-        // Show success notification
-        setNotification({
-          type: 'success',
-          message: 'Message deleted successfully.'
-        });
+      // If there's an expense ID, delete the expense first
+      if (expenseId) {
+        try {
+          await expenseService.deleteExpense(expenseId);
+        } catch (err) {
+          // If the expense doesn't exist or we can't delete it, just continue
+          console.warn('Could not delete expense, may already be deleted:', err);
+        }
       }
-    } catch (error) {
-      console.error('Error deleting:', error);
+      
+      // Use our custom hook to delete the message
+      await deleteMessage(msgId);
+      
+      // Clear the confirmation dialog
+      setShowConfirmDelete(null);
+      
+      // Show success notification
+      setNotification({
+        type: 'success',
+        message: 'Message deleted successfully.'
+      });
+    } catch (err) {
+      console.error('Failed to delete:', err);
       setNotification({
         type: 'error',
-        message: `Failed to delete ${type}. Please try again.`
+        message: 'Failed to delete. Please try again.'
       });
-    } finally {
-      setShowConfirmDelete(null);
     }
   };
-
 
   return (
     <ProtectedRoute>
       <Layout>
         <Head>
-          <title>Chat - MoneyManager</title>
+          <title>Chat | Piggy</title>
+          <meta name="description" content="Chat with your expense assistant" />
         </Head>
         
-        {/* Notification toast */}
-        {notification && (
-          <div 
-            className={`fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 max-w-xs transition-opacity duration-300 ${notification.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}
-          >
-            {notification.message}
-          </div>
-        )}
-        
-        <div className="h-full flex flex-col"> 
-          {error && (
-            <div className="p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert">
-              {error}
+        <div className="flex flex-col h-full bg-gray-50">
+          {/* Header */}
+          <header className="bg-white shadow-sm p-4 flex items-center justify-between">
+            <h1 className="text-xl font-semibold text-gray-800">Chat</h1>
+            <div className="text-sm text-gray-500">
+              {messages.length} {messages.length === 1 ? 'message' : 'messages'}
             </div>
-          )}
+          </header>
           
           {/* Messages Area or Loading State */}
           {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
-              <LoadingAnimation fullPage={true} text="Loading messages..." type="dots" />
+            <div className="flex flex-col space-y-4 p-4">
+              <SkeletonMessageGroup count={5} />
+            </div>
+          ) : error ? (
+            <div className="text-center p-4">
+              <p className="text-red-500 mb-4">Failed to load messages. Please try again.</p>
+              <button 
+                onClick={mutate}
+                className="btn-primary"
+              >
+                Try Again
+              </button>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={messagesContainerRef}>
-              {messages.map(message => {
-                // Determine message type
-                const isUser = message.message_type === 'user';
-                const isExpenseMessage = !isUser && message.content && (
-                  message.content.includes('Expense saved:') || 
-                  message.content.includes('✅ Expense saved:')
-                );
-                
-                // Parse expense data for system messages
-                const expenseData = isExpenseMessage ? parseExpenseData(message.id, message.content) : null;
-                
-                return (
-                  <div 
-                    key={message.id} 
-                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-                  >
-                    {isUser ? (
-                      <div 
-                        className="w-auto max-w-[75%] px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 relative"
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setShowConfirmDelete({ id: message.id, type: 'message' });
-                        }}
+            <MessageContext.Provider value={{ parseExpenseData, expenseDataCache }}>
+              <div className="flex flex-col flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4" ref={messagesContainerRef}>
+                <AnimatePresence initial={false} mode="popLayout">
+                  {messages.map(message => {
+                    const isTemp = message.id?.startsWith('temp-') || false;
+                    const isUser = message.message_type === 'user';
+                    const isExpenseMessage = !isUser && (
+                      (message.expenseData) || // Check for direct expense data
+                      (message.content && (
+                        message.content.includes('Expense saved:') || 
+                        message.content.includes('✅ Expense saved:')
+                      ))
+                    );
+                    
+                    return (
+                      <motion.div
+                        key={message.id || message.localId || `msg-${Math.random()}`}
+                        initial={isTemp ? false : { opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={isTemp ? { opacity: 0, y: 0, transition: { duration: 0 } } : { opacity: 0, y: -20, transition: { duration: 0.3 } }}
+                        transition={{ duration: 0.3 }}
+                        className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                       >
-                        <p className="whitespace-pre-line">{message.content}</p>
-                      </div>
-                    ) : isExpenseMessage && expenseData ? (
-                      <div className="w-3/4">
-                        <ExpenseCard 
-                          expense={expenseData} 
-                          messageId={message.id}
-                          onDelete={(expenseId, msgId) => {
-                            // Update messages state directly to remove the deleted expense message
-                            setMessages(prev => prev.filter(msg => msg.id !== msgId));
-                            
-                            // Show success notification
-                            setNotification({
-                              type: 'success',
-                              message: 'Expense deleted successfully.'
-                            });
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <div className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 whitespace-pre-line">
-                        <p>{message.content}</p>
-                      </div>
-                    )}
+                        {isUser ? (
+                          <div 
+                            className="max-w-[75%] px-4 py-3 bg-gradient-primary text-white rounded-3xl shadow-sm"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setShowConfirmDelete({ id: message.id, type: 'message' });
+                            }}
+                          >
+                            <p className="whitespace-pre-line">{message.content}</p>
+                          </div>
+                        ) : isExpenseMessage ? (
+                          <div className="flex justify-center mb-4">
+                            <ExpenseMessage 
+                              message={message}
+                              onDelete={(expenseId, msgId) => {
+                                // If the expense was deleted, show a success notification
+                                if (expenseId) {
+                                  setNotification({
+                                    type: 'success',
+                                    message: 'Expense deleted successfully.'
+                                  });
+                                }
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-3/4 px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-100 whitespace-pre-line">
+                            <p>{message.content}</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+                
+                {/* Show loading animation when processing a message */}
+                {isProcessing && (
+                  <div className="flex justify-start mb-4">
+                    <LoadingAnimation size="small" />
                   </div>
-                );
-              })}
-              
-              {/* Show loading animation when processing a message */}
-              {isProcessing && (
-                <div className="flex justify-start mb-4">
-                  <LoadingAnimation size="small" />
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                )}
+                
+                {/* Invisible element to scroll to */}
+                <div ref={messagesEndRef} />
+              </div>
+            </MessageContext.Provider>
           )}
           
-          {/* Input - MODIFIED: No longer fixed, part of the flex column */}
-          <div className="p-4 bg-gray-50 border-t border-gray-100">
-            <form onSubmit={handleSendMessage} className="flex space-x-2">
+          {/* Message Input */}
+          <div className="bg-white border-t border-gray-200 p-4">
+            <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="What did you buy?"
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder="Type a message..."
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 disabled={isProcessing}
               />
               <button
                 type="submit"
-                className="w-10 h-10 flex items-center justify-center text-white rounded-full shadow-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ background: 'linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169)' }}
-                disabled={isProcessing || !inputText.trim()}
+                className="p-2 rounded-full bg-gradient-primary text-white disabled:opacity-50"
+                disabled={!inputText.trim() || isProcessing}
               >
-                {isProcessing ? (
-                  <span className="flex items-center justify-center w-5 h-5">
-                    <span className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></span>
-                  </span>
-                ) : (
-                  <Send className="w-5 h-5" />
-                )}
+                <Send className="w-5 h-5" />
               </button>
             </form>
           </div>
-        </div>
-        
-        {/* Confirmation Dialog */}
-        {showConfirmDelete && showConfirmDelete.type === 'message' && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-5 max-w-sm w-full shadow-lg">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                Delete Message?
-              </h3>
-              <p className="text-gray-600 mb-5">
-                This will permanently delete this message from the chat.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowConfirmDelete(null)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition-opacity"
-                  style={{ background: 'linear-gradient(45deg, #E74C3C, #cf8ef9, #fe9169)' }}
-                >
-                  Delete
-                </button>
+          
+          {/* Confirmation Dialog */}
+          {showConfirmDelete && (
+            <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+                <h3 className="text-lg font-semibold mb-4">Confirm Delete</h3>
+                <p className="text-gray-600 mb-6">Are you sure you want to delete this {showConfirmDelete.type}? This action cannot be undone.</p>
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => setShowConfirmDelete(null)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+          
+          {/* Notification */}
+          {notification && (
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 ease-in-out"
+              style={{
+                backgroundColor: notification.type === 'success' ? '#10B981' : '#EF4444',
+                color: 'white'
+              }}
+            >
+              {notification.message}
+            </div>
+          )}
+        </div>
       </Layout>
     </ProtectedRoute>
   );

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Trash2, X, Check } from 'lucide-react';
+import React, { useState, memo } from 'react';
+import { Trash2, X, Check, Edit2 } from 'lucide-react';
+import ExpenseEditDialog from './ExpenseEditDialog/ExpenseEditDialog';
 import TagIcon from './TagIcon';
 import { formatCurrency } from '../utils/formatters';
 import expenseService from '../services/expenseService';
 import chatService from '../services/chatService';
-import { useTags } from '../contexts/TagsContext';
+import { useTagResolver } from '../hooks/useTags';
 
 // Currency symbol mapping
 const currencySymbols = {
@@ -25,30 +26,12 @@ export const getCurrencySymbol = (code) => {
   return currencySymbols[code] || code;
 };
 
-const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
-  const { getTag } = useTags();
+const ExpenseCard = memo(({ expense, messageId, onDelete, onEdit, fullWidth = false }) => {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
 
-  // Get tag data from context - try multiple approaches to find the best tag match
-  let tag = null;
-  
-  // First priority: Use tag_id if available
-  if (expense.tag_id) {
-    tag = getTag(expense.tag_id);
-  }
-  // Second priority: Check the first area_tag
-  else if (expense.area_tags && expense.area_tags.length > 0) {
-    // Try to get the tag by the first area tag name
-    tag = getTag(expense.area_tags[0].toLowerCase());
-  }
-  // Third priority: Fall back to any provided tag object
-  else if (expense.tag) {
-    tag = expense.tag;
-  }
-  
-  const iconName = tag?.icon || 'tag'; // Default to 'tag' icon if not specified
-  const iconColor = tag?.colors?.hex || '#6b7280'; // Default icon color (gray-500)
-  const borderColor = tag?.colors?.hex || '#d1d5db'; // Default border color (gray-300)
+  // Use our custom hook to efficiently resolve tag data
+  const { tag, iconName, iconColor, bgColor, textColor, borderColor } = useTagResolver(expense);
 
   // Determine card width classes
   const cardWidthClasses = fullWidth ? 'w-full' : 'w-full min-w-[320px] max-w-[400px]';
@@ -87,14 +70,23 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
     setShowConfirmDelete(false);
   };
 
+  const handleCardClick = (e) => {
+    // Prevent triggering edit when clicking delete button
+    if (e.target.closest('button')) return;
+    setShowEditDialog(true);
+    if (onEdit) onEdit(expense);
+  };
+
   return (
-    <div 
-      className={`rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow bg-white ${cardWidthClasses} border-2 border-l-4`}
-      style={{
-        borderLeftColor: borderColor,
-      }}
+    <>
+      <div 
+        className={`card ${cardWidthClasses} border-2 border-l-4 cursor-pointer hover:shadow-md transition-shadow`}
+        style={{
+          borderLeftColor: borderColor,
+        }}
+        onClick={handleCardClick}
     >
-      <div className="flex justify-between items-center py-2 px-3 bg-gray-50 border-b-2 border-gray-100 gap-2">
+      <div className="card-header flex justify-between items-center py-2 px-3 gap-2">
         <div className="flex items-center">
           <div className={`w-7 h-7 rounded-full flex items-center justify-center mr-2`}>
             <TagIcon 
@@ -117,86 +109,95 @@ const ExpenseCard = ({ expense, messageId, onDelete, fullWidth = false }) => {
           {getCurrencySymbol(expense.currency)}{parseFloat(expense.amount).toFixed(2)}
         </div>
       </div>
-      <div className="px-3 py-2 flex justify-between items-center">
+      <div className="card-body px-3 py-2 flex justify-between items-center">
         <div className="flex flex-wrap gap-1.5">
-          {/* Area tags (with tag-specific colors and icons from TagsContext) */}
-          {expense.area_tags && expense.area_tags.map(tagName => {
-            // Get tag data from context
-            const areaTag = getTag(tagName.toLowerCase());
-            // Get colors or use defaults
-            const bgColor = areaTag?.colors?.bgHex || '#EBF5FF';
-            const textColor = areaTag?.colors?.textHex || '#3B82F6';
-            const iconColor = areaTag?.colors?.hex || textColor;
-            const iconName = areaTag?.icon || 'tag';
-            
-            return (
-              <span 
-                key={`area-${tagName}`}
-                className={`px-2 py-0.5 rounded-full text-xs font-semibold`}
-                style={{ 
-                  backgroundColor: bgColor,
-                  color: textColor
-                }}
-              >
-                {tagName}
-              </span>
-            );
-          })}
+          {/* Area tags with consistent styling */}
+          {expense.area_tags && expense.area_tags.map(tagName => (
+            <span 
+              key={`area-${tagName}`}
+              className="px-2 py-0.5 rounded-full text-xs font-semibold"
+              style={{ 
+                backgroundColor: bgColor || '#EBF5FF',
+                color: textColor || '#3B82F6'
+              }}
+            >
+              {tagName}
+            </span>
+          ))}
           
-          {/* Context tags (with tag-specific colors and icons from TagsContext) */}
-          {expense.context_tags && expense.context_tags.map(tagName => {
-            // Get tag data from context
-            const contextTag = getTag(tagName.toLowerCase());
-            // Get colors or use defaults (slightly different defaults for context tags)
-            const bgColor = contextTag?.colors?.bgHex || '#F0F7FF';
-            const textColor = contextTag?.colors?.textHex || '#2563EB';
-            const iconColor = contextTag?.colors?.hex || textColor;
-            const iconName = contextTag?.icon || 'info-circle'; // Default to info-circle for context tags
-            
-            return (
-              <span 
-                key={`context-${tagName}`}
-                className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                style={{ 
-                  backgroundColor: bgColor,
-                  color: textColor 
-                }}
-              >
-                {tagName}
-              </span>
-            );
-          })}
+          {/* Context tags with consistent styling */}
+          {expense.context_tags && expense.context_tags.map(tagName => (
+            <span 
+              key={`context-${tagName}`}
+              className="px-2 py-0.5 rounded-full text-xs font-semibold"
+              style={{ 
+                backgroundColor: bgColor ? `${bgColor}80` : '#F0F7FF', // Lighter version of the bgColor
+                color: textColor || '#2563EB'
+              }}
+            >
+              {tagName}
+            </span>
+          ))}
         </div>
         
         {/* Delete button with icon */}
         {showConfirmDelete ? (
           <div className="flex space-x-1">
             <button 
-              onClick={() => setShowConfirmDelete(false)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowConfirmDelete(false);
+              }}
               className="p-1 text-xs text-gray-600 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
             >
               <X className="w-3 h-3" />
             </button>
             <button 
-              onClick={handleDelete}
-              className="p-1 text-xs text-white rounded-full hover:opacity-90 transition-opacity"
-              style={{ background: 'linear-gradient(45deg, #E74C3C, #cf8ef9)' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete();
+              }}
+              className="p-1 text-xs text-white rounded-full hover:opacity-90 transition-opacity bg-gradient-secondary"
             >
               <Check className="w-3 h-3" />
             </button>
           </div>
         ) : (
-          <button 
-            onClick={() => setShowConfirmDelete(true)}
-            className="text-gray-400 hover:text-gray-600 transition-colors p-1"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex space-x-1">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowEditDialog(true);
+              }}
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+              aria-label="Edit expense"
+            >
+              <Edit2 className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowConfirmDelete(true);
+              }}
+              className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+              aria-label="Delete expense"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
     </div>
+      
+    {/* Edit Dialog */}
+    <ExpenseEditDialog
+      expense={expense}
+      isOpen={showEditDialog}
+      onClose={() => setShowEditDialog(false)}
+    />
+    </>
   );
-};
+});
 
 // Export currency symbols
 export { currencySymbols };

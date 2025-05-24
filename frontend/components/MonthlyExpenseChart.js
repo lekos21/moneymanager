@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import LoadingAnimation from './LoadingAnimation';
+import userService from '../services/userService';
+import { getCurrencySymbol } from '../utils/formatters';
 
 const MonthlyExpenseChart = ({ 
   activeTab, 
@@ -12,7 +14,20 @@ const MonthlyExpenseChart = ({
   budget 
 }) => {
   const [chartOptions, setChartOptions] = useState({});
-  
+  const [currencySymbol, setCurrencySymbol] = useState('$');
+
+  useEffect(() => {
+    const fetchCurrency = async () => {
+      try {
+        const data = await userService.getUserData();
+        setCurrencySymbol(getCurrencySymbol(data.preferred_currency));
+      } catch (err) {
+        console.error('Error fetching currency:', err);
+      }
+    };
+    fetchCurrency();
+  }, []);
+
   useEffect(() => {
     // Calculate budget progress
     const budgetProgress = budget ? (monthlyTotal / budget) * 100 : null;
@@ -39,10 +54,9 @@ const MonthlyExpenseChart = ({
         tooltip: {
           trigger: 'axis',
           formatter: function(params) {
-            // Format date as "May, 1" instead of "Day 1"
             const date = new Date();
             const month = date.toLocaleString('en-US', { month: 'short' });
-            return `${month}, ${params[0].name}: $${params[0].value.toFixed(2)}`;
+            return `${month}, ${params[0].name}: ${currencySymbol}${params[0].value.toFixed(2)}`;
           },
           backgroundColor: 'rgba(255, 255, 255, 0.9)',
           borderColor: '#fff',
@@ -127,8 +141,7 @@ const MonthlyExpenseChart = ({
         tooltip: {
           trigger: 'axis',
           formatter: function(params) {
-            // Format date properly
-            return `${params[0].name}: $${params[0].value.toFixed(2)}`;
+            return `${params[0].name}: ${currencySymbol}${params[0].value.toFixed(2)}`;
           },
           backgroundColor: 'rgba(255, 255, 255, 0.9)',
           borderColor: '#fff',
@@ -205,7 +218,7 @@ const MonthlyExpenseChart = ({
       </div>
       <div className="flex justify-between items-end mb-4">
         <p className="text-4xl font-bold">
-          $ {activeTab === 'monthly' ? monthlyTotal.toFixed(2) : weeklyTotal.toFixed(2)}
+          {currencySymbol}{activeTab === 'monthly' ? monthlyTotal.toFixed(2) : weeklyTotal.toFixed(2)}
         </p>
       </div>
       
@@ -230,8 +243,8 @@ const MonthlyExpenseChart = ({
             ></div>
           </div>
           <div className="flex justify-between text-xs mt-1.5 text-white">
-            <span>${(activeTab === 'monthly' ? monthlyTotal : weeklyTotal).toFixed(0)} spent</span>
-            <span>${budget.toFixed(0)} budget</span>
+            <span>{currencySymbol}{(activeTab === 'monthly' ? monthlyTotal : weeklyTotal).toFixed(0)} spent</span>
+            <span>{currencySymbol}{budget.toFixed(0)} budget</span>
           </div>
         </div>
       )}

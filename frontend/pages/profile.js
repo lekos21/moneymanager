@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
@@ -15,18 +16,39 @@ import {
   faShieldAlt, 
   faUser
 } from '@fortawesome/free-solid-svg-icons';
+import PageErrorBoundary from '../components/PageErrorBoundary';
+import LoadingAnimation from '../components/LoadingAnimation';
+import { useUserData } from '../hooks/useUserData';
 
 export default function Profile() {
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
-  const [userStats, setUserStats] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [budget, setBudget] = useState('');
-  const [preferredCurrency, setPreferredCurrency] = useState('');
+  
+  // Use SWR hook for user data
+  const { 
+    userData, 
+    isLoading, 
+    isError, 
+    mutate: refreshUserData 
+  } = useUserData({
+    shouldFetch: !!user,
+    revalidateOnFocus: true
+  });
+  // Local state
+  const [budget, setBudget] = useState(userData?.budget?.toString() || '');
+  const [preferredCurrency, setPreferredCurrency] = useState(userData?.preferred_currency || 'EUR');
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const [notification, setNotification] = useState({ show: false, message: '', type: '' });
   const [isSaving, setIsSaving] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  
+  // Derived user stats
+  const userStats = {
+    totalExpenses: userData?.totalExpenses || 0,
+    totalCategories: userData?.totalCategories || 0,
+    expenseCount: userData?.expenseCount || 0,
+    streak: userData?.streak || 0
+  };
 
   const CURRENCY_SYMBOLS = {
     USD: '$',
@@ -45,33 +67,15 @@ export default function Profile() {
     return CURRENCY_SYMBOLS[currencyCode] || currencyCode || '';
   };
 
+  // Update local state when userData changes
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        setIsLoading(true);
-        const data = await userService.getUserData();
-        setUserData(data);
-        if (data.budget) setBudget(data.budget.toString());
-        if (data.preferred_currency) {
-          setPreferredCurrency(data.preferred_currency);
-        } else {
-          setPreferredCurrency('EUR');
-        }
-        setUserStats({
-          totalExpenses: data.totalExpenses || 1250.75,
-          totalCategories: data.totalCategories || 8,
-          expenseCount: data.expenseCount || 42,
-          streak: data.streak || 0,
-        });
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch user data:', error);
-        setNotification({ show: true, message: 'Could not load user data.', type: 'error' });
-        setIsLoading(false);
+    if (userData) {
+      if (userData.budget) setBudget(userData.budget.toString());
+      if (userData.preferred_currency) {
+        setPreferredCurrency(userData.preferred_currency);
       }
-    };
-    fetchUserData();
-  }, []);
+    }
+  }, [userData]);
 
   const handleLogout = async () => {
     try {
@@ -97,22 +101,12 @@ export default function Profile() {
     try {
       setIsSaving(true);
       const updatedData = await userService.updateUserData({ preferred_currency: newCurrency });
-      setUserData(updatedData);
       setPreferredCurrency(newCurrency);
-      setNotification({
-        show: true,
-        message: 'Currency updated successfully!',
-        type: 'success'
-      });
-      setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
+      refreshUserData();
+      setNotification({ show: true, message: 'Currency updated successfully!', type: 'success' });
     } catch (error) {
       console.error('Failed to update currency:', error);
-      setNotification({
-        show: true,
-        message: 'Failed to update currency.',
-        type: 'error'
-      });
-      setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
+      setNotification({ show: true, message: 'Failed to update currency.', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -121,212 +115,208 @@ export default function Profile() {
   const saveBudget = async () => {
     try {
       setIsSaving(true);
-      const updatedData = await userService.updateUserData({ budget: budget ? parseFloat(budget) : null });
-      setUserData(updatedData);
-      setNotification({
-        show: true,
-        message: budget ? 'Budget updated successfully!' : 'Budget removed successfully!',
-        type: 'success'
-      });
-      setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
+      const budgetValue = budget === '' ? 0 : parseFloat(budget);
+      const updatedData = await userService.updateUserData({ budget: budgetValue });
+      refreshUserData();
+      setNotification({ show: true, message: 'Budget updated successfully!', type: 'success' });
       setShowBudgetModal(false);
     } catch (error) {
       console.error('Failed to update budget:', error);
-      setNotification({
-        show: true,
-        message: 'Failed to update budget.',
-        type: 'error'
-      });
-      setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
+      setNotification({ show: true, message: 'Failed to update budget.', type: 'error' });
     } finally {
       setIsSaving(false);
     }
   };
 
+  // Render loading state if data is being fetched
+  if (isLoading) {
+    return (
+      <ProtectedRoute>
+        <Layout>
+          <LoadingAnimation />
+        </Layout>
+      </ProtectedRoute>
+    );
+  }
+
+  // Render error state if data fetch failed
+  if (isError) {
+    return (
+      <ProtectedRoute>
+        <PageErrorBoundary>
+          <Layout>
+            <div className="flex items-center justify-center h-screen">
+              <p className="text-red-500">Error loading profile. Please try again later.</p>
+            </div>
+          </Layout>
+        </PageErrorBoundary>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
-      <Layout>
-        <Head>
-          <title>Profile | MoneyManager</title>
-        </Head>
+      <PageErrorBoundary>
+        <Layout>
+          <Head>
+            <title>Profile | MoneyManager</title>
+          </Head>
 
-        <div className="px-4 py-6 max-w-lg mx-auto">
-          {/* Header */}
-          <header className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-800">Profile</h1>
-            <p className="text-gray-500">Manage your account</p>
-          </header>
-
-          {/* User Info Card */}
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-            <div className="flex flex-col sm:flex-row items-center sm:items-start">
-              {user?.photoURL ? (
-                <img
-                  src={user.photoURL}
-                  alt="User Avatar"
-                  className="w-20 h-20 rounded-full object-cover border-2 border-gray-100 shadow-sm mb-4 sm:mb-0 sm:mr-6"
-                />
-              ) : (
-                <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 mb-4 sm:mb-0 sm:mr-6 border-2 border-gray-100">
-                  {user?.displayName ? user.displayName.charAt(0).toUpperCase() : <FontAwesomeIcon icon={faUser} className="w-8 h-8" />}
+          <div className="px-4 py-6 max-w-lg mx-auto">
+            {/* Header */}
+            <header className="mb-6">
+              <h1 className="text-2xl font-bold text-gray-800">Profile</h1>
+              <p className="text-gray-500">Manage your account</p>
+            </header>
+            
+            {/* Profile Header */}
+            <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+              <div className="flex items-center">
+                <div className="relative h-16 w-16 rounded-full overflow-hidden bg-gray-200 mr-4">
+                  {user?.photoURL && !imageError ? (
+                    <Image 
+                      src={user.photoURL} 
+                      alt="Profile" 
+                      layout="fill"
+                      objectFit="cover"
+                      onError={() => setImageError(true)}
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center bg-purple-100 text-purple-500">
+                      <FontAwesomeIcon icon={faUser} className="text-2xl" />
+                    </div>
+                  )}
                 </div>
-              )}
-              
-              <div className="text-center sm:text-left">
-                <h2 className="text-xl font-bold">{user?.displayName || 'User'}</h2>
-                <p className="text-gray-500 mb-4">{user?.email}</p>
                 
-                {isLoading ? (
-                  <div className="animate-pulse">
-                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-                  </div>
-                ) : userStats ? (
-                  <div className="flex justify-between mt-2 bg-gray-50 rounded-lg p-3">
-                    <div className="text-center px-3">
-                      <p className="text-sm text-gray-500">Expenses</p>
-                      <p className="text-xl font-bold">{userStats.expenseCount}</p>
-                    </div>
-                    <div className="text-center px-3 border-x border-gray-200">
-                      <p className="text-sm text-gray-500">Categories</p>
-                      <p className="text-xl font-bold">{userStats.totalCategories}</p>
-                    </div>
-                    <div className="text-center px-3">
-                      <p className="text-sm text-gray-500">Streak</p>
-                      <p className="text-xl font-bold">{userStats.streak} days</p>
-                    </div>
-                  </div>
-                ) : null}
+                <div>
+                  <h1 className="text-xl font-semibold text-gray-800">{user?.displayName || 'User'}</h1>
+                  <p className="text-gray-500">{user?.email}</p>
+                </div>
               </div>
             </div>
+            
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-white rounded-xl shadow-sm p-4">
+                <div className="flex items-center mb-2">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-2">
+                    <FontAwesomeIcon icon={faDollarSign} className="text-purple-500" />
+                  </div>
+                  <h3 className="text-gray-500">Total Spent</h3>
+                </div>
+                <p className="text-2xl font-semibold">
+                  {getCurrencySymbol(preferredCurrency)}
+                  {userStats?.totalExpenses?.toFixed(2) || '0.00'}
+                </p>
+              </div>
+              
+              <div className="bg-white rounded-xl shadow-sm p-4">
+                <div className="flex items-center mb-2">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2">
+                    <FontAwesomeIcon icon={faCoins} className="text-blue-500" />
+                  </div>
+                  <h3 className="text-gray-500">Categories</h3>
+                </div>
+                <p className="text-2xl font-semibold">{userStats?.totalCategories || 0}</p>
+              </div>
+            </div>
+            
+            {/* Settings */}
+            <div className="bg-white rounded-xl shadow-md overflow-hidden mb-6">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h2 className="text-lg font-semibold text-gray-800">Settings</h2>
+              </div>
+              
+              <div className="divide-y divide-gray-100">
+                {/* Budget Setting */}
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-800">Monthly Budget</h3>
+                    <p className="text-sm text-gray-500">Set your monthly spending limit</p>
+                  </div>
+                  <button 
+                    onClick={() => setShowBudgetModal(true)}
+                    className="text-purple-600 hover:text-purple-800 font-medium flex items-center"
+                  >
+                    {userData?.budget ? `${getCurrencySymbol(preferredCurrency)}${userData.budget}` : 'Set Budget'}
+                    <FontAwesomeIcon icon={faChevronRight} className="ml-2 text-sm" />
+                  </button>
+                </div>
+                
+                {/* Currency Setting */}
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-800">Currency</h3>
+                    <p className="text-sm text-gray-500">Select your preferred currency</p>
+                  </div>
+                  <select
+                    value={preferredCurrency}
+                    onChange={handleCurrencyChange}
+                    className="border border-gray-300 rounded-md px-3 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    disabled={isSaving}
+                  >
+                    {CURRENCIES.map(currency => (
+                      <option key={currency} value={currency}>
+                        {currency} ({getCurrencySymbol(currency)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                
+                {/* Notification Setting */}
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-800">Notifications</h3>
+                    <p className="text-sm text-gray-500">Manage your notification preferences</p>
+                  </div>
+                  <button className="text-purple-600 hover:text-purple-800 font-medium flex items-center">
+                    <FontAwesomeIcon icon={faBell} className="mr-2" />
+                    Manage
+                  </button>
+                </div>
+                
+                {/* Privacy Setting */}
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-medium text-gray-800">Privacy & Security</h3>
+                    <p className="text-sm text-gray-500">Control your privacy settings</p>
+                  </div>
+                  <button className="text-purple-600 hover:text-purple-800 font-medium flex items-center">
+                    <FontAwesomeIcon icon={faShieldAlt} className="mr-2" />
+                    Manage
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Logout Button */}
+            <button 
+              onClick={handleLogout}
+              className="w-full py-3 bg-red-500 text-white rounded-lg flex items-center justify-center hover:bg-red-600 transition-colors"
+            >
+              <FontAwesomeIcon icon={faSignOutAlt} className="mr-2" />
+              Logout
+            </button>
           </div>
-
-          {/* Settings Section */}
-          <div className="bg-white rounded-xl shadow-sm mb-6">
-            <h2 className="text-lg font-semibold text-gray-800 p-4 border-b border-gray-100">Settings</h2>
-
-            <div className="divide-y divide-gray-100">
-              {/* Budget Setting */}
-              <button
-                onClick={() => setShowBudgetModal(true)}
-                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center mr-4 text-blue-500">
-                    <FontAwesomeIcon icon={faDollarSign} className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <span className="font-medium text-gray-800">Monthly Budget</span>
-                    <p className="text-sm text-gray-500">
-                      {userData?.budget ? `${getCurrencySymbol(preferredCurrency)}${parseFloat(userData.budget).toFixed(2)}` : 'Not set'}
-                    </p>
-                  </div>
-                </div>
-                <FontAwesomeIcon icon={faChevronRight} className="w-4 h-4 text-gray-400" />
-              </button>
-
-              {/* Preferred Currency Setting */}
-              <div className="w-full flex items-center justify-between p-4">
-                <div className="flex items-center">
-                  <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center mr-4 text-purple-500">
-                    <FontAwesomeIcon icon={faCoins} className="w-5 h-5" />
-                  </div>
-                  <div className="text-left">
-                    <span className="font-medium text-gray-800">Preferred Currency</span>
-                    <p className="text-sm text-gray-500">
-                      Current: {preferredCurrency ? `${preferredCurrency} (${getCurrencySymbol(preferredCurrency)})` : 'Not set'}
-                    </p>
-                  </div>
-                </div>
-                <select
-                  value={preferredCurrency}
-                  onChange={handleCurrencyChange}
-                  className="text-sm text-gray-700 border border-gray-200 rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  disabled={isSaving}
-                >
-                  {CURRENCIES.map((currency) => (
-                    <option key={currency} value={currency}>
-                      {currency} ({getCurrencySymbol(currency)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Account & Security */}
-              <div 
-                className="flex items-center p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => setNotification({ show: true, message: 'Account Security settings coming soon!', type: 'info' })}
-              >
-                <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center mr-4 text-green-500">
-                  <FontAwesomeIcon icon={faShieldAlt} className="w-5 h-5" />
-                </div>
-                <div className="flex-grow">
-                  <p className="font-medium text-gray-800">Account & Security</p>
-                  <p className="text-sm text-gray-500">Manage password, 2FA</p>
-                </div>
-                <FontAwesomeIcon icon={faChevronRight} className="w-4 h-4 text-gray-400" />
-              </div>
-
-              {/* Notifications */}
-              <div 
-                className="flex items-center p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                onClick={() => setNotification({ show: true, message: 'Notification settings coming soon!', type: 'info' })}
-              >
-                <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center mr-4 text-yellow-500">
-                  <FontAwesomeIcon icon={faBell} className="w-5 h-5" />
-                </div>
-                <div className="flex-grow">
-                  <p className="font-medium text-gray-800">Notifications</p>
-                  <p className="text-sm text-gray-500">Manage app notifications</p>
-                </div>
-                <FontAwesomeIcon icon={faChevronRight} className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Logout Button */}
-          <button
-            onClick={handleLogout}
-            className="w-full bg-white rounded-xl shadow-sm p-4 flex items-center mb-6 hover:bg-red-50 transition-colors"
-          >
-            <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center mr-4 text-red-500">
-              <FontAwesomeIcon icon={faSignOutAlt} className="w-5 h-5" />
-            </div>
-            <span className="font-medium text-gray-800">Logout</span>
-          </button>
-
+          
           {/* Budget Modal */}
           {showBudgetModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fade-in">
-              <div className="bg-white p-5 rounded-xl shadow-lg w-full max-w-md">
-                <h3 className="text-xl font-semibold text-gray-800 mb-1">Set Monthly Budget</h3>
-                <p className="text-sm text-gray-500 mb-4">
-                  Currency: {preferredCurrency} ({getCurrencySymbol(preferredCurrency)})
-                </p>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+                <h3 className="text-lg font-semibold mb-4">Set Monthly Budget</h3>
                 
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="budgetAmount" className="block text-sm font-medium text-gray-700 mb-1">
-                      Budget Amount
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-gray-500">{getCurrencySymbol(preferredCurrency)}</span>
-                      </div>
-                      <input
-                        id="budgetAmount"
-                        type="text"
-                        inputMode="decimal"
-                        value={budget}
-                        onChange={handleBudgetChange}
-                        placeholder="e.g., 500.00"
-                        className="pl-8 pr-3 py-3 block w-full text-gray-800 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    <p className="text-xs text-gray-500 mt-2">
-                      Enter your monthly spending limit. Leave empty to remove budget.
-                    </p>
-                  </div>
+                <div className="mb-4">
+                  <label className="block text-gray-700 mb-2" htmlFor="budget">
+                    Budget Amount ({getCurrencySymbol(preferredCurrency)})
+                  </label>
+                  <input
+                    id="budget"
+                    type="text"
+                    value={budget}
+                    onChange={handleBudgetChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="Enter amount"
+                  />
 
                   <div className="flex justify-end space-x-3 pt-2">
                     <button
@@ -381,8 +371,8 @@ export default function Profile() {
               </div>
             </div>
           )}
-        </div>
-      </Layout>
+        </Layout>
+      </PageErrorBoundary>
     </ProtectedRoute>
   );
 }

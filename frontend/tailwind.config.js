@@ -18,6 +18,9 @@ module.exports = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Lexend', 'sans-serif'],
+      },
       colors: {
         primary: '#7B3FE4',
         secondary: '#9C6EFF',

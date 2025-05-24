@@ -70,12 +70,13 @@ export const chatService = {
   },
   
   // Send a new message
-  async sendMessage(content, messageType = 'user') {
+  async sendMessage(content, messageType = 'user', expenseData = null) {
     try {
       const request = await createAuthenticatedRequest();
       const response = await request.post('/api/chat/messages', { 
         content,
-        message_type: messageType 
+        message_type: messageType,
+        expense_data: expenseData // Include expense data if provided
       });
       return response.data;
     } catch (error) {

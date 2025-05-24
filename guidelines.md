@@ -68,6 +68,32 @@ Immagini ottimizzate (next/image)
 
 Lazy-load per moduli non critici (e.g. report mensili)
 
+**PERFORMANCE OPTIMIZATIONS (Updated)**:
+
+**Data Fetching Strategy**:
+- Implement SWR hooks across all components instead of manual state management
+- Use `useSWR('/api/expenses/')` for automatic caching and deduplication
+- Add request deduplication for user data and tags
+- Implement optimistic updates for better UX
+
+**Component Optimization**:
+- Use React.memo for ExpenseCard and other heavy components
+- Implement useMemo for expensive calculations (expense parsing, stats)
+- Add code splitting with dynamic imports for charts and heavy components
+- Use virtual scrolling for long expense lists
+
+**Bundle Optimization**:
+- Lazy load chart components (MonthlyExpenseChart, ExpenseDoughnutChart)
+- Split large pages into smaller components
+- Use Next.js dynamic imports with loading states
+- Implement progressive loading with skeleton UI
+
+**Caching Strategy**:
+- Browser caching for static assets (24h)
+- SWR cache for API responses (30s deduping)
+- LocalStorage for user preferences
+- Service worker for offline functionality
+
 3. Backend (FastAPI + Firestore)
 Struttura progetto
 
@@ -197,9 +223,60 @@ Refresh: endpoint /api/auth/refresh con refresh token in HttpOnly cookie
 ### Icons
 
 - Consistent icon set (Lucide React)
+
 - Category-specific colored icons
+
 - Proper sizing and alignment
-- Color-coded for different categories
+
+**DESIGN SYSTEM IMPROVEMENTS (Updated)**:
+
+**Color System**:
+```css
+/* Unified color tokens */
+:root {
+  --color-primary-50: #f0f9ff;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --gradient-expense: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+```
+
+**Component Consistency**:
+- Standardize all gradients using CSS custom properties
+- Create reusable Button, Card, and Input components
+- Implement consistent spacing using design tokens
+- Use semantic color names instead of arbitrary values
+
+**Mobile Optimization**:
+- Minimum 44px touch targets for all interactive elements
+- Safe area handling for iPhone notch/dynamic island
+- Optimized gestures for swipe actions
+- Improved keyboard navigation
+
+**Loading States**:
+- Skeleton loading for all components
+- Progressive loading for images and charts
+- Optimistic UI updates for user actions
+- Error boundaries with retry mechanisms
+
+**Typography Scale**:
+```css
+.text-display { @apply text-3xl font-bold tracking-tight; }
+.text-heading { @apply text-xl font-semibold text-gray-900; }
+.text-subheading { @apply text-lg font-medium text-gray-700; }
+.text-body { @apply text-base text-gray-600; }
+.text-caption { @apply text-sm text-gray-500; }
+```
+
+**Accessibility**:
+- WCAG 2.1 AA color contrast ratios
+- Screen reader support for all interactive elements
+- Keyboard navigation for all functionality
+- Focus indicators with proper styling
+- Semantic HTML structure
 
 6. Performance & UX
 Realtime: Firestore listeners in React Query → update istantanei di grafici e chat

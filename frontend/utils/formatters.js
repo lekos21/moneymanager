@@ -54,8 +54,27 @@ export const formatTime = (date, options = {}) => {
   return dateObj.toLocaleTimeString(undefined, defaultOptions);
 };
 
+// Mapping currency codes to symbols
+const CURRENCY_SYMBOLS = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CAD: 'CA$',
+  AUD: 'A$',
+  CHF: 'CHF',
+  CNY: '¥',
+  INR: '₹'
+};
+
+// Get symbol for currency code
+export const getCurrencySymbol = (currencyCode) => {
+  return CURRENCY_SYMBOLS[currencyCode] || currencyCode || '';
+};
+
 export default {
   formatCurrency,
   formatDate,
-  formatTime
+  formatTime,
+  getCurrencySymbol
 };

@@ -29,7 +29,7 @@ export default function GoogleLoginButton() {
         disabled={loading}
         className={`flex items-center justify-center gap-3 w-full text-white font-medium rounded-full px-6 py-3 shadow-md hover:opacity-90 transition-opacity ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
         style={{
-          background: 'linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169)'
+          background: 'linear-gradient(135deg, #00d4ff, #2575fc, #6a11cb)'
         }}
       >
         {loading ? (

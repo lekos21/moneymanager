@@ -1,0 +1,81 @@
+/* Expense Edit Dialog Styles */
+
+/* Input group styling */
+.input-group {
+  @apply space-y-2;
+}
+
+.input-label {
+  @apply text-sm font-medium text-gray-700;
+}
+
+.input-field {
+  @apply w-full px-4 py-3 border border-gray-200 rounded-xl
+         focus:outline-none focus:ring-2 focus:ring-purple-500 
+         focus:border-transparent transition-all duration-200
+         text-gray-900 placeholder-gray-400;
+}
+
+.input-field:hover {
+  @apply border-gray-300;
+}
+
+/* Amount input special styling */
+.amount-input {
+  @apply text-2xl font-semibold text-center;
+  font-family: 'Lexend', monospace;
+}
+
+/* Textarea styling */
+.textarea-field {
+  @apply input-field resize-none;
+  min-height: 100px;
+}
+
+/* Dialog animations */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    transform: translate(-50%, -48%) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Mobile-specific styles */
+@media (max-width: 640px) {
+  .expense-edit-dialog {
+    animation: slideUp 300ms ease-out;
+  }
+}
+
+/* Desktop-specific styles */
+@media (min-width: 641px) {
+  .expense-edit-dialog {
+    animation: fadeInScale 250ms ease-out;
+  }
+}
+
+/* Accessibility focus styles */
+.tag-option:focus-visible {
+  @apply outline-none ring-2 ring-purple-500 ring-offset-2;
+}
+
+/* Touch-friendly sizing for mobile */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}

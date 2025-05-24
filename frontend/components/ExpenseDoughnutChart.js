@@ -5,12 +5,27 @@ import LoadingAnimation from './LoadingAnimation';
 import DynamicIcon from './DynamicIcon';
 import TagIcon from './TagIcon';
 import { useTags } from '../contexts/TagsContext';
+import userService from '../services/userService';
+import { getCurrencySymbol } from '../utils/formatters';
 
 const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
   const [chartOptions, setChartOptions] = useState({});
   const [totalAmount, setTotalAmount] = useState(0);
   const [categoryData, setCategoryData] = useState([]);
+  const [currencySymbol, setCurrencySymbol] = useState('$');
   const { getTag } = useTags();
+
+  useEffect(() => {
+    const fetchCurrency = async () => {
+      try {
+        const data = await userService.getUserData();
+        setCurrencySymbol(getCurrencySymbol(data.preferred_currency));
+      } catch (error) {
+        console.error('Error fetching user currency:', error);
+      }
+    };
+    fetchCurrency();
+  }, []);
 
   useEffect(() => {
     if (!expenses || expenses.length === 0) {
@@ -90,7 +105,7 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
           return `
             <div style="padding: 8px;">
               <div style="font-weight: bold; margin-bottom: 4px;">${params.name}</div>
-              <div>Amount: $${params.value.toFixed(2)}</div>
+              <div>Amount: ${currencySymbol}${params.value.toFixed(2)}</div>
               <div>Percentage: ${params.percent}%</div>
               <div>Expenses: ${category ? category.count : 0}</div>
             </div>
@@ -98,20 +113,35 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
         }
       },
       legend: {
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
+        show: true,
+        orient: 'horizontal',
+        bottom: 15,
+        left: 'center',
         type: 'scroll',
+        pageButtonPosition: 'end',
+        pageButtonGap: 5,
+        pageButtonItemGap: 5,
+        pageIconColor: '#666',
+        pageIconInactiveColor: '#aaa', 
+        pageIconSize: 15,
+        itemWidth: 25,
+        itemHeight: 14,
+        itemGap: 20,
         textStyle: {
-          color: '#666'
+          color: '#374151',
+          fontSize: 12,
+          fontWeight: '500'
+        },
+        pageTextStyle: {
+          color: '#6B7280'
         }
       },
       series: [
         {
           name: 'Expenses by Category',
           type: 'pie',
-          radius: ['40%', '70%'],
-          center: ['40%', '50%'],
+          radius: ['45%', '75%'],
+          center: ['50%', '40%'],
           avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 10,
@@ -123,10 +153,10 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
           },
           emphasis: {
             label: {
-              show: false // Disable the label that appears when clicking on a slice
+              show: false
             },
-            scale: true, // Keep the slice scaling effect
-            scaleSize: 10 // Slightly expand the slice when clicked
+            scale: true,
+            scaleSize: 5
           },
           labelLine: {
             show: false
@@ -135,7 +165,7 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
         }
       ]
     });
-  }, [expenses, getTag]);
+  }, [expenses, getTag, currencySymbol]);
 
   if (isLoading) {
     return (
@@ -155,11 +185,9 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
   }
 
   return (
-    <div className="bg-white rounded-3xl shadow-md p-6">
-      <h2 className="text-lg font-semibold text-gray-800 mb-2">Spending by Category</h2>
-      <p className="text-sm text-gray-500 mb-4">Total: ${totalAmount.toFixed(2)}</p>
+    <div>
       
-      <div className="h-80">
+      <div className="h-80 mb-1">
         <ReactECharts
           option={chartOptions}
           style={{ height: '100%', width: '100%' }}
@@ -169,33 +197,37 @@ const ExpenseDoughnutChart = ({ expenses, isLoading }) => {
         />
       </div>
       
-      <div className="mt-4 space-y-3">
+      <div className="space-y-1 mt-1">
         {categoryData.map((category, index) => {
           const tag = category.tagId ? getTag(category.tagId) : getTag(category.name);
-          const color = tag?.colors?.hex || '#d1d5db'; // Use color from context tag
+          const color = tag?.colors?.hex || '#d1d5db';
           
-          // Create percentage badge style
-          const badgeStyle = {
-            backgroundColor: `${color}20`, // 20 is hex for 12% opacity
-            color: color
-          };
+          const percentage = totalAmount > 0 ? ((category.amount / totalAmount) * 100) : 0;
           
           return (
-            <div key={index} className="flex items-center justify-between">
+            <div key={index} className="flex items-center justify-between py-2 px-1 hover:bg-gray-50 rounded-lg transition-colors">
               <div className="flex items-center">
                 <TagIcon
                   iconName={tag?.icon || 'tag'}
                   iconColor={color}
                   size={20}
-                  className="mr-2"
+                  className="mr-3"
                   fallbackIcon="tag"
                 />
                 <span className="text-sm font-medium text-gray-700">{category.name}</span>
               </div>
-              <div className="flex items-center">
-                <span className="text-sm text-gray-500 mr-2">${category.amount.toFixed(2)}</span>
-                <span className="text-xs font-medium px-2 py-1 rounded-full" style={badgeStyle}>
-                  {category.percentage}%
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-semibold text-gray-900">
+                  {currencySymbol}{category.amount.toFixed(2)}
+                </span>
+                <span 
+                  className="px-2 py-1 rounded-full text-xs font-medium"
+                  style={{
+                    backgroundColor: `${color}20`,
+                    color: color
+                  }}
+                >
+                  {percentage.toFixed(0)}%
                 </span>
               </div>
             </div>

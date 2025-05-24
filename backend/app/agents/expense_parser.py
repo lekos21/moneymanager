@@ -70,32 +70,47 @@ def create_expense_parser(db_client, default_currency):
     context_examples = ", ".join(context_tags)
 
     # Create a prompt template with improved handling for simple formats
-    prompt = PromptTemplate(
-    template="""
-        You are an AI assistant that extracts expense information from text.
-        Extract the following details from the user's expense description:
-
-        1. The amount spent - REQUIRED
-
-        2. The currency - REQUIRED
-           - Always return a 3-letter currency code (USD, EUR, GBP, etc.)
-           - If the user doesn’t specify a currency, assume {default_currency}
-
-        3. Area tags (REQUIRED): Tags that categorize what the expense is for. 
-           Choose between: {area_examples}
-
-        4. Context tags (OPTIONAL): Tags that provide additional context.  
-           Choose between: {context_examples}
-
-        5. Short text (REQUIRED): A brief description (1–4 words) of what was purchased. Include brands if provided or relevant details.
-           Examples: "Prada shoes", "dinner at Luigi's", "movie ticket", "electricity bill", "Netflix payment", "Airbnb booking", "H&M t-shirt", "gym membership", "gift for Anna"
-
-        {format_instructions}
-
-        User expense: {query}
-        """,
-            input_variables=["query"],
-            partial_variables={"format_instructions": parser.get_format_instructions(), "area_examples": area_examples, "context_examples": context_examples, "default_currency": default_currency},
+    prompt = PromptTemplate( 
+    template=""" 
+        You are an AI assistant that extracts expense information from text. 
+        Extract the following details from the user's expense description: 
+ 
+        1. The amount spent - REQUIRED 
+ 
+        2. The currency - REQUIRED 
+           - Always return a 3-letter currency code (USD, EUR, GBP, etc.) 
+           - If the user doesn't specify a currency, assume {default_currency} 
+ 
+        3. Area tags (REQUIRED): Tags that categorize what the expense is for, the object actually bought (could be multiple!).  
+           Create appropriate tags for the expense category. Common examples include: {area_examples}
+           But feel free to create other relevant category tags as needed.
+ 
+        4. Context tags (OPTIONAL): Tags that provide additional context, the people or events associated with the expense (could be multiple!). 
+           This can include people's names, occasions, locations, or other relevant details.
+           Examples include: {context_examples}
+           Create any context tags that help describe the circumstances of the expense.
+ 
+        5. Short text (REQUIRED): A brief description (1–4 words) of what was purchased. Include brands if provided or relevant details. 
+           Examples: "Prada shoes", "dinner at Luigi's", "movie ticket", "electricity bill", "Netflix payment", "Airbnb booking", "H&M t-shirt", "gym membership", "gift for Anna" 
+ 
+        Guidelines for tagging:
+        - Be consistent with tag naming (use lowercase, simple terms)
+        - If a person is mentioned include their name as a context tag (e.g., "gift for Anna" would have as tags both "gift" and "Anna")
+        - Create tags that would be useful for filtering and categorizing expenses later
+        - If the expense is in a different language, adapt the tags to the language used in the expense description
+        - Don't use similar tags for area and context (e.g. "gift" and "gifts")
+ 
+        {format_instructions} 
+ 
+        User expense: {query} 
+        """, 
+            input_variables=["query"], 
+            partial_variables={
+                "format_instructions": parser.get_format_instructions(), 
+                "area_examples": area_examples, 
+                "context_examples": context_examples, 
+                "default_currency": default_currency
+            }, 
         )
 
     

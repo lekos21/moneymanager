@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400;1,6..12,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700;800;900&display=swap');
+@import './design-tokens.css';
+@import './expense-edit-dialog.css';
 
 @tailwind base;
 @tailwind components;
@@ -7,10 +9,41 @@
 html, body {
   padding: 0;
   margin: 0;
-  font-family: 'Nunito Sans', sans-serif;
+  font-family: var(--font-family);
   height: 100%;
 }
 
 #__next {
   height: 100%;
+}
+
+/* Common utility classes */
+@layer components {
+  .btn-primary {
+    @apply text-white font-semibold py-3 px-6 rounded-full shadow-lg;
+    background: var(--gradient-primary);
+    min-height: 44px;
+  }
+  
+  .btn-secondary {
+    @apply bg-white text-gray-800 font-semibold py-3 px-6 rounded-full shadow-md border border-gray-100;
+    min-height: 44px;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-md overflow-hidden;
+  }
+  
+  .card-header {
+    @apply px-4 py-3 bg-gray-50 border-b border-gray-100;
+  }
+  
+  .card-body {
+    @apply p-4;
+  }
+  
+  .input-field {
+    @apply px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent;
+    min-height: 44px;
+  }
 }
