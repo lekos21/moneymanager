@@ -6,10 +6,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import LoadingAnimation from '../components/LoadingAnimation';
 import SkeletonChart from '../components/skeletons/SkeletonChart';
-import DebugExpenses from '../components/DebugExpenses';
 import { useExpenses } from '../hooks/useExpenses';
 import { useUserData } from '../hooks/useUserData';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Calendar } from 'lucide-react';
 
 // Dynamically import chart component for better performance
 const ExpenseDoughnutChart = dynamic(
@@ -23,6 +22,8 @@ export default function Reports() {
   const { userData } = useUserData();
   const [selectedRange, setSelectedRange] = useState('This Month');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
 
   const rangeOptions = [
     'Today',
@@ -65,6 +66,14 @@ export default function Reports() {
           return expenseDate >= startOfLast3Months;
         case 'This Year':
           return expenseDate >= startOfYear;
+        case 'Custom Range':
+          if (customStartDate && customEndDate) {
+            const startDate = new Date(customStartDate);
+            const endDate = new Date(customEndDate);
+            endDate.setHours(23, 59, 59, 999); // Include end day
+            return expenseDate >= startDate && expenseDate <= endDate;
+          }
+          return true;
         default:
           return true;
       }
@@ -76,14 +85,22 @@ export default function Reports() {
 
   const getDateRangeText = () => {
     const now = new Date();
+    const formatDate = (date) => {
+      return date.toLocaleDateString('en-GB', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+    };
+    
     switch (selectedRange) {
       case 'Today':
-        return now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return formatDate(now);
       case 'This Week':
         const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
         const endOfWeek = new Date(startOfWeek);
         endOfWeek.setDate(startOfWeek.getDate() + 6);
-        return `${startOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endOfWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        return `${formatDate(startOfWeek)} - ${formatDate(endOfWeek)}`;
       case 'This Month':
         return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       case 'Last Month':
@@ -91,9 +108,14 @@ export default function Reports() {
         return lastMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       case 'Last 3 Months':
         const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-        return `${threeMonthsAgo.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })} - ${now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+        return `${formatDate(threeMonthsAgo)} - ${formatDate(now)}`;
       case 'This Year':
         return now.getFullYear().toString();
+      case 'Custom Range':
+        if (customStartDate && customEndDate) {
+          return `${formatDate(new Date(customStartDate))} - ${formatDate(new Date(customEndDate))}`;
+        }
+        return 'Select date range';
       default:
         return '';
     }
@@ -151,6 +173,34 @@ export default function Reports() {
                   </div>
                 )}
               </div>
+
+              {/* Custom Range Inputs */}
+              {selectedRange === 'Custom Range' && (
+                <div className="mt-3 p-4 bg-gray-50 rounded-lg border">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-gray-500" />
+                      <label className="text-sm font-medium text-gray-700">From:</label>
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#7B3FE4] focus:border-transparent"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-gray-700">To:</label>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#7B3FE4] focus:border-transparent"
+                        min={customStartDate}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Total Spending Card */}
@@ -182,7 +232,6 @@ export default function Reports() {
                 />
               </div>
             )}
-            <DebugExpenses />
           </div>
         </div>
       </Layout>

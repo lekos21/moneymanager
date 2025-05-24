@@ -290,14 +290,14 @@ export default function Profile() {
                   <div className="flex justify-end space-x-3 pt-2">
                     <button
                       onClick={() => setShowBudgetModal(false)}
-                      className="px-4 py-2 rounded-lg text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors font-medium"
+                      className="px-4 py-2 mt-4 rounded-lg text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors font-medium"
                       disabled={isSaving}
                     >
                       Cancel
                     </button>
                     <button
                       onClick={saveBudget}
-                      className={`px-4 py-2 rounded-lg text-white font-medium transition-colors ${!budget || isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-600'}`}
+                      className={`px-4 py-2 mt-4 rounded-lg text-white font-medium transition-colors ${!budget || isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600'}`}
                       disabled={!budget || isSaving}
                     >
                       {isSaving ? (

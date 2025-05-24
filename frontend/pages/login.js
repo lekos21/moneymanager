@@ -5,12 +5,23 @@ import Image from 'next/image';
 import { useAuth } from '../contexts/AuthContext';
 import GoogleLoginButton from '../components/GoogleLoginButton';
 import LoadingAnimation from '../components/LoadingAnimation';
-import { FiPieChart, FiTrendingUp, FiShield } from 'react-icons/fi';
+import { FiPieChart, FiTrendingUp, FiShield, FiEye, FiEyeOff, FiMail, FiLock, FiUser } from 'react-icons/fi';
 
 export default function Login() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, signInWithEmail, signUp, error, setError } = useAuth();
   const [animateIn, setAnimateIn] = useState(false);
+  const [authMode, setAuthMode] = useState('signin'); // 'signin', 'signup', or 'google'
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    displayName: ''
+  });
+  const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
     // If user is already logged in, redirect to home
@@ -23,6 +34,217 @@ export default function Login() {
       setAnimateIn(true);
     }, 100);
   }, [user, loading, router]);
+
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
+
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!formData.email) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(formData.email)) {
+      errors.email = 'Please enter a valid email';
+    }
+    
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+    
+    if (authMode === 'signup') {
+      if (!formData.displayName) {
+        errors.displayName = 'Display name is required';
+      }
+      
+      if (!formData.confirmPassword) {
+        errors.confirmPassword = 'Please confirm your password';
+      } else if (formData.password !== formData.confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+      }
+    }
+    
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    
+    // Clear specific field error when user starts typing
+    if (formErrors[name]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!validateForm()) {
+      return;
+    }
+    
+    setFormLoading(true);
+    setError(null);
+    
+    try {
+      if (authMode === 'signin') {
+        await signInWithEmail(formData.email, formData.password);
+        router.push('/home');
+      } else if (authMode === 'signup') {
+        await signUp(formData.email, formData.password, formData.displayName);
+        router.push('/home');
+      }
+    } catch (error) {
+      console.error('Authentication error:', error);
+      // Error is handled by AuthContext
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const switchAuthMode = (mode) => {
+    setAuthMode(mode);
+    setFormData({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      displayName: ''
+    });
+    setFormErrors({});
+    setError(null);
+  };
+
+  const renderEmailForm = () => (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      {authMode === 'signup' && (
+        <div>
+          <div className="relative">
+            <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              name="displayName"
+              placeholder="Display Name"
+              value={formData.displayName}
+              onChange={handleInputChange}
+              className={`w-full pl-9 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm ${
+                formErrors.displayName ? 'border-red-500' : 'border-gray-200'
+              }`}
+            />
+          </div>
+          {formErrors.displayName && (
+            <p className="text-red-500 text-xs mt-1">{formErrors.displayName}</p>
+          )}
+        </div>
+      )}
+      
+      <div>
+        <div className="relative">
+          <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <input
+            type="email"
+            name="email"
+            placeholder="Email"
+            value={formData.email}
+            onChange={handleInputChange}
+            className={`w-full pl-9 pr-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm ${
+              formErrors.email ? 'border-red-500' : 'border-gray-200'
+            }`}
+          />
+        </div>
+        {formErrors.email && (
+          <p className="text-red-500 text-xs mt-1">{formErrors.email}</p>
+        )}
+      </div>
+      
+      <div>
+        <div className="relative">
+          <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <input
+            type={showPassword ? 'text' : 'password'}
+            name="password"
+            placeholder="Password"
+            value={formData.password}
+            onChange={handleInputChange}
+            className={`w-full pl-9 pr-10 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm ${
+              formErrors.password ? 'border-red-500' : 'border-gray-200'
+            }`}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            {showPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+          </button>
+        </div>
+        {formErrors.password && (
+          <p className="text-red-500 text-xs mt-1">{formErrors.password}</p>
+        )}
+      </div>
+      
+      {authMode === 'signup' && (
+        <div>
+          <div className="relative">
+            <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type={showConfirmPassword ? 'text' : 'password'}
+              name="confirmPassword"
+              placeholder="Confirm Password"
+              value={formData.confirmPassword}
+              onChange={handleInputChange}
+              className={`w-full pl-9 pr-10 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm ${
+                formErrors.confirmPassword ? 'border-red-500' : 'border-gray-200'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showConfirmPassword ? <FiEyeOff className="w-4 h-4" /> : <FiEye className="w-4 h-4" />}
+            </button>
+          </div>
+          {formErrors.confirmPassword && (
+            <p className="text-red-500 text-xs mt-1">{formErrors.confirmPassword}</p>
+          )}
+        </div>
+      )}
+      
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
+          <p className="text-red-600 text-xs">{error}</p>
+        </div>
+      )}
+      
+      <button
+        type="submit"
+        disabled={formLoading}
+        className="w-full bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] text-white py-2.5 px-4 rounded-lg font-medium hover:shadow-lg transform hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm"
+      >
+        {formLoading ? (
+          <div className="flex items-center justify-center">
+            <LoadingAnimation type="spinner" />
+            <span className="ml-2">
+              {authMode === 'signin' ? 'Signing in...' : 'Creating account...'}
+            </span>
+          </div>
+        ) : (
+          authMode === 'signin' ? 'Sign In' : 'Create Account'
+        )}
+      </button>
+    </form>
+  );
 
   return (
     <>
@@ -55,8 +277,8 @@ export default function Login() {
         {/* Main content */}
         <div className="relative z-10 max-w-6xl w-full mx-auto flex flex-col md:flex-row items-center justify-between gap-12">
         <div className={`transform transition-all duration-700 ${animateIn ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'} md:w-1/2`}>
-          <div className="text-center md:text-left mb-8">
-            <div className="mb-4 relative w-40 h-40 mx-auto md:mx-0 transform transition-all duration-500 hover:scale-105">
+          <div className="text-center md:text-left mb-4">
+            <div className="relative w-40 h-40 mx-auto md:mx-0 transform transition-all duration-500 hover:scale-105">
               <Image 
                 src="/PiggyLogo.png" 
                 alt="Piggy Logo" 
@@ -66,7 +288,7 @@ export default function Login() {
                 className="object-contain drop-shadow-lg"
               />
             </div>
-            <h1 className="text-5xl font-black mb-3 leading-normal pb-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-700 bg-clip-text text-transparent">Piggy</h1>
+            <h1 className="text-5xl font-black leading-normal pb-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-700 bg-clip-text text-transparent">Piggy</h1>
             <p className="text-gray-600 text-xl max-w-md">Track, analyze and optimize your expenses</p>
           </div>
 
@@ -78,23 +300,44 @@ export default function Login() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Google Login - Priority */}
                 <GoogleLoginButton />
                 
-                <div className="relative my-6">
+                <div className="relative my-4">
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-gray-200"></div>
                   </div>
                   <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-gray-500">Coming soon</span>
+                    <span className="px-2 bg-white text-gray-500">or</span>
                   </div>
                 </div>
-                
-                <button 
-                  disabled 
-                  className="w-full py-3 px-4 bg-gray-100 text-gray-400 rounded-full font-medium opacity-70 cursor-not-allowed"
-                >
-                  Sign in with Email
-                </button>
+
+                {/* Auth Mode Selector */}
+                <div className="flex space-x-1 bg-gray-100 rounded-xl p-1">
+                  <button
+                    onClick={() => switchAuthMode('signin')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                      authMode === 'signin'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => switchAuthMode('signup')}
+                    className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                      authMode === 'signup'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Sign Up
+                  </button>
+                </div>
+
+                {/* Email Form */}
+                {renderEmailForm()}
               </div>
             )}
             <p className="mt-8 text-center text-sm text-gray-500">

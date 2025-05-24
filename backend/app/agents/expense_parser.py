@@ -99,6 +99,7 @@ def create_expense_parser(db_client, default_currency):
         - Create tags that would be useful for filtering and categorizing expenses later
         - If the expense is in a different language, adapt the tags to the language used in the expense description
         - Don't use similar tags for area and context (e.g. "gift" and "gifts")
+        - For food, assign the tag "food" but also try to infer if it also should have a "groceries" or "restaurant" tag
  
         {format_instructions} 
  
