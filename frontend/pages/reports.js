@@ -108,19 +108,19 @@ export default function Reports() {
         </Head>
 
         <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
-          <div className="container mx-auto px-4 py-8 max-w-4xl">
+          <div className="container mx-auto px-4 py-6 max-w-4xl">
             {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <div className="mb-4">
+              <h1 className="text-2xl font-bold text-gray-900 mb-1">
                 Reports
               </h1>
-              <p className="text-gray-600">
+              <p className="text-gray-600 text-sm">
                 View your spending analytics
               </p>
             </div>
 
             {/* Range Selector */}
-            <div className="mb-6">
+            <div className="mb-4">
               <div className="relative">
                 <button
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -154,7 +154,7 @@ export default function Reports() {
             </div>
 
             {/* Total Spending Card */}
-            <div className="mb-6">
+            <div className="mb-4">
               <div className="bg-white rounded-lg border border-gray-200 p-4">
                 <div className="flex justify-between items-center">
                   <div>

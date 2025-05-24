@@ -10,11 +10,38 @@ const getAuthToken = async () => {
   const auth = getAuth();
   const user = auth.currentUser;
   
-  if (!user) {
-    throw new Error('User not authenticated');
+  // If user is available, get fresh token from Firebase
+  if (user) {
+    return await user.getIdToken();
   }
   
-  return await user.getIdToken();
+  // If auth.currentUser is null (during page refresh), try localStorage first
+  const storedToken = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+  if (storedToken) {
+    return storedToken;
+  }
+  
+  // If no stored token, wait for auth state restoration (with timeout)
+  return new Promise((resolve, reject) => {
+    let timeoutId;
+    
+    const unsubscribe = auth.onAuthStateChanged((firebaseUser) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      unsubscribe();
+      
+      if (firebaseUser) {
+        firebaseUser.getIdToken().then(resolve).catch(reject);
+      } else {
+        reject(new Error('User not authenticated'));
+      }
+    });
+    
+    // Timeout after 5 seconds
+    timeoutId = setTimeout(() => {
+      unsubscribe();
+      reject(new Error('User not authenticated'));
+    }, 5000);
+  });
 };
 
 // Create an axios instance with authentication headers

@@ -18,7 +18,7 @@ gcloud run services update moneymanager-backend \
 ```bash
 # Frontend deployment with directory cleanup
 cd /home/alex/moneymanager/frontend && \
-rm -rf .next && \
+sudo rm -rf .next && \
 npm run build && \
 cd .. && \
 firebase deploy --only hosting

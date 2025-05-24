@@ -14,7 +14,8 @@ import {
   faChevronRight, 
   faBell, 
   faShieldAlt, 
-  faUser
+  faUser,
+  faCrown
 } from '@fortawesome/free-solid-svg-icons';
 import PageErrorBoundary from '../components/PageErrorBoundary';
 import LoadingAnimation from '../components/LoadingAnimation';
@@ -195,30 +196,22 @@ export default function Profile() {
               </div>
             </div>
             
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <div className="flex items-center mb-2">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-2">
-                    <FontAwesomeIcon icon={faDollarSign} className="text-purple-500" />
+            {/* Premium Account Tier Card */}
+            <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl shadow-lg p-6 mb-6 text-white">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center mr-3">
+                    <FontAwesomeIcon icon={faCrown} className="text-yellow-300 text-lg" />
                   </div>
-                  <h3 className="text-gray-500">Total Spent</h3>
-                </div>
-                <p className="text-2xl font-semibold">
-                  {getCurrencySymbol(preferredCurrency)}
-                  {userStats?.totalExpenses?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              
-              <div className="bg-white rounded-xl shadow-sm p-4">
-                <div className="flex items-center mb-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-2">
-                    <FontAwesomeIcon icon={faCoins} className="text-blue-500" />
+                  <div>
+                    <h3 className="text-lg font-semibold">Premium Account</h3>
+                    <p className="text-purple-100 text-sm">Active Subscription</p>
                   </div>
-                  <h3 className="text-gray-500">Categories</h3>
                 </div>
-                <p className="text-2xl font-semibold">{userStats?.totalCategories || 0}</p>
               </div>
+              <p className="text-purple-100 text-sm leading-relaxed">
+                Enjoy unlimited expense tracking.
+              </p>
             </div>
             
             {/* Settings */}
@@ -261,30 +254,6 @@ export default function Profile() {
                       </option>
                     ))}
                   </select>
-                </div>
-                
-                {/* Notification Setting */}
-                <div className="px-6 py-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-gray-800">Notifications</h3>
-                    <p className="text-sm text-gray-500">Manage your notification preferences</p>
-                  </div>
-                  <button className="text-purple-600 hover:text-purple-800 font-medium flex items-center">
-                    <FontAwesomeIcon icon={faBell} className="mr-2" />
-                    Manage
-                  </button>
-                </div>
-                
-                {/* Privacy Setting */}
-                <div className="px-6 py-4 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-gray-800">Privacy & Security</h3>
-                    <p className="text-sm text-gray-500">Control your privacy settings</p>
-                  </div>
-                  <button className="text-purple-600 hover:text-purple-800 font-medium flex items-center">
-                    <FontAwesomeIcon icon={faShieldAlt} className="mr-2" />
-                    Manage
-                  </button>
                 </div>
               </div>
             </div>

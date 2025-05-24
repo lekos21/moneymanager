@@ -110,11 +110,43 @@ export function useExpenseStats(expenses = []) {
     parseInt(a.day) - parseInt(b.day)
   );
 
+  // Generate weekly spending data for the chart (last 7 days)
+  const weeklySpendingMap = {};
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  // Initialize last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dayName = dayNames[date.getDay()];
+    const dateKey = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    weeklySpendingMap[dateKey] = { 
+      day: dayName,
+      date: dateKey,
+      amount: 0 
+    };
+  }
+  
+  // Fill in the actual spending data for weekly chart
+  weeklyExpenses.forEach(expense => {
+    const expenseDate = new Date(expense.timestamp || expense.date);
+    const dateKey = expenseDate.toISOString().split('T')[0];
+    if (weeklySpendingMap[dateKey]) {
+      weeklySpendingMap[dateKey].amount += parseFloat(expense.amount) || 0;
+    }
+  });
+  
+  // Convert to array and sort by date
+  const weeklyExpensesChart = Object.values(weeklySpendingMap).sort((a, b) => 
+    new Date(a.date) - new Date(b.date)
+  );
+
   return {
     monthlyTotal,
     weeklyTotal,
     monthlyExpenses,
     weeklyExpenses,
-    dailyExpenses
+    dailyExpenses,
+    weeklyExpensesChart
   };
 }

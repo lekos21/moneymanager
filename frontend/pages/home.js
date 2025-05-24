@@ -33,7 +33,8 @@ export default function Home() {
     monthlyTotal, 
     weeklyTotal, 
     dailyExpenses, 
-    weeklyExpenses 
+    weeklyExpenses,
+    weeklyExpensesChart
   } = useExpenseStats(expenses);
   
   // Get budget from user data
@@ -115,7 +116,7 @@ export default function Home() {
                 monthlyTotal={monthlyTotal}
                 weeklyTotal={weeklyTotal}
                 dailyExpenses={dailyExpenses}
-                weeklyExpenses={weeklyExpenses}
+                weeklyExpenses={weeklyExpensesChart}
                 budget={budget}
               />
               
