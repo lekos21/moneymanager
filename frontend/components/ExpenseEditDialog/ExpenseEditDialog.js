@@ -132,7 +132,7 @@ export default function ExpenseEditDialog({ expense, isOpen, onClose }) {
             exit="exit"
           >
             {/* Header with gradient background */}
-            <div className="bg-gradient-to-r from-[#00e4ff] to-[#4d9fff] text-white px-4 py-3 flex items-center justify-between">
+            <div className="bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] text-white px-4 py-3 flex items-center justify-between">
               <h2 className="text-xl font-semibold">Edit Expense</h2>
               <button 
                 onClick={onClose}
@@ -278,8 +278,8 @@ export default function ExpenseEditDialog({ expense, isOpen, onClose }) {
               <button
                 onClick={handleSave}
                 disabled={isLoading}
-                className={`px-4 py-2 rounded-lg bg-gradient-to-r from-[#d233e9] to-[#4d9fff] text-white
-                          font-medium hover:from-[#d233e9]/90 hover:to-[#4d9fff]/90 transition-all
+                className={`px-4 py-2 rounded-lg bg-green-500 text-white
+                          font-medium hover:bg-green-600 transition-all
                           duration-200 flex items-center gap-2
                           ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
               >

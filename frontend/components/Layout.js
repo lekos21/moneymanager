@@ -48,10 +48,7 @@ function NavItem({ href, icon, active }) {
   if (icon === 'add') {
     return (
       <Link href={href} className="flex items-center justify-center p-3">
-        <div className="flex items-center justify-center h-12 w-12 rounded-full shadow-md"
-          style={{
-            background: 'linear-gradient(45deg, #42A5F5, #cf8ef9, #fe9169)'
-          }}>
+        <div className="flex items-center justify-center h-12 w-12 rounded-full shadow-md bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF]">
           <DynamicIcon 
             iconName="plus" 
             className="h-6 w-6 text-white" 

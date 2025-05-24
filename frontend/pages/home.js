@@ -12,6 +12,7 @@ import SkeletonCard from '../components/skeletons/SkeletonCard';
 import SkeletonChart from '../components/skeletons/SkeletonChart';
 import { useExpenses, useExpenseStats } from '../hooks/useExpenses';
 import { useUserData } from '../hooks/useUserData';
+import { formatCurrency, getCurrencySymbol } from '../utils/formatters';
 
 // Dynamically import chart component for better performance
 const MonthlyExpenseChart = dynamic(
@@ -40,6 +41,11 @@ export default function Home() {
   // Get budget from user data
   const budget = userData?.budget;
   
+  // Get user's preferred currency symbol, default to $ if not loaded yet
+  const currencySymbol = userData?.preferred_currency 
+    ? getCurrencySymbol(userData.preferred_currency) 
+    : '$';
+
   // Mock income for now - in a real app, this would come from an API
   const totalIncome = 2500.00;
   const balance = totalIncome - monthlyTotal;
@@ -178,7 +184,7 @@ export default function Home() {
                             <p className="font-medium text-gray-800">{expense.short_text}</p>
                             <p className="text-xs text-gray-500">{formattedDate}</p>
                           </div>
-                          <p className="font-bold text-gray-800">-${parseFloat(expense.amount).toFixed(2)}</p>
+                          <p className="font-bold text-gray-800">{formatCurrency(-parseFloat(expense.amount), currencySymbol)}</p>
                         </div>
                       );
                     })}

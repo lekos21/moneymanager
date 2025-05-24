@@ -417,7 +417,7 @@ export default function Chat() {
               />
               <button
                 type="submit"
-                className="p-3 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                className="p-3 rounded-full bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                 disabled={!inputText.trim() || isProcessingExpense}
               >
                 <Send className="w-5 h-5" />

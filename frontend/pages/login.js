@@ -15,7 +15,7 @@ export default function Login() {
   useEffect(() => {
     // If user is already logged in, redirect to home
     if (user && !loading) {
-      router.push('/chat');
+      router.push('/home');
     }
     
     // Trigger animation after component mounts

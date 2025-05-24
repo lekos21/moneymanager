@@ -141,7 +141,7 @@ export default function Reports() {
                         }}
                         className={`w-full text-left px-4 py-3 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
                           selectedRange === option 
-                            ? 'bg-gradient-to-r from-[#00e4ff] to-[#4d9fff] text-white' 
+                            ? 'bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] text-white' 
                             : 'text-gray-700'
                         }`}
                       >

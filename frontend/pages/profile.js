@@ -197,7 +197,7 @@ export default function Profile() {
             </div>
             
             {/* Premium Account Tier Card */}
-            <div className="bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl shadow-lg p-6 mb-6 text-white">
+            <div className="bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] rounded-xl shadow-lg p-6 mb-6 text-white">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center">
                   <div className="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center mr-3">
