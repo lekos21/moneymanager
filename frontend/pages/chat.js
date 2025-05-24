@@ -11,6 +11,7 @@ import ExpenseCard, { getCurrencySymbol } from '../components/ExpenseCard';
 import { Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMessages } from '../hooks/useMessages';
+import { useExpenses } from '../hooks/useExpenses';
 import { useTagResolver } from '../hooks/useTags';
 import SkeletonMessage, { SkeletonMessageGroup } from '../components/skeletons/SkeletonMessage';
 
@@ -20,7 +21,7 @@ const MessageContext = createContext(null);
 // Memoized message component for better performance
 const ExpenseMessage = memo(({ message, onDelete }) => {
   // Get parseExpenseData from context and expenseDataCache
-  const { parseExpenseData, expenseDataCache } = useContext(MessageContext);
+  const { parseExpenseData, expenseDataCache, expenses } = useContext(MessageContext);
   
   // Memoize the parsed expense data to prevent re-parsing on every render
   const expense = useMemo(() => {
@@ -34,9 +35,36 @@ const ExpenseMessage = memo(({ message, onDelete }) => {
       return message.expenseData;
     }
     
-    // Otherwise try to parse it from the content
+    // Try to correlate with actual expense data from the API
+    if (expenses && expenses.length > 0 && message.content.includes('Expense saved:')) {
+      // Extract expense details from the system message
+      const match = message.content.match(/Expense saved:\s*(.+?)\s*-\s*[€$£¥]?(\d+(?:\.\d{2})?)/);
+      if (match) {
+        const [, description, amount] = match;
+        const messageTime = new Date(message.timestamp);
+        
+        // Find matching expense within 10 seconds of the message timestamp
+        const matchingExpense = expenses.find(expense => {
+          const expenseTime = new Date(expense.timestamp);
+          const timeDiff = Math.abs(expenseTime - messageTime);
+          const amountMatch = Math.abs(parseFloat(expense.amount) - parseFloat(amount)) < 0.01;
+          const descriptionMatch = expense.short_text?.toLowerCase().includes(description.toLowerCase()) ||
+                                 expense.raw_text?.toLowerCase().includes(description.toLowerCase());
+          
+          // Match if within 10 seconds and amounts/descriptions are similar
+          return timeDiff <= 10000 && amountMatch && descriptionMatch;
+        });
+        
+        if (matchingExpense) {
+          console.log(`[Chat] Found matching expense for message: ${matchingExpense.id}`);
+          return matchingExpense;
+        }
+      }
+    }
+    
+    // Otherwise try to parse it from the content (fallback)
     return parseExpenseData(message.id, message.content);
-  }, [message.id, message.content, parseExpenseData, message.expenseData, expenseDataCache]);
+  }, [message.id, message.content, message.timestamp, parseExpenseData, message.expenseData, expenseDataCache, expenses]);
   
   if (!expense) return null;
   
@@ -61,31 +89,66 @@ export default function Chat() {
   // Store expense data in a persistent state
   const [expenseDataCache, setExpenseDataCache] = useState({});
   
+  // Separate state for expense processing (different from message processing)
+  const [isProcessingExpense, setIsProcessingExpense] = useState(false);
+  
   // Use our custom hook for messages
   const { 
     messages, 
     isLoading, 
-    isProcessing, 
     isError: error,
-    sendMessage,
-    deleteMessage,
-    parseExpenseData,
     mutate
   } = useMessages();
 
+  // Use our custom hook for expenses
+  const { expenses } = useExpenses();
+
   // Scroll to bottom when messages change or when initially loaded
   useEffect(() => {
-    if (!isLoading && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!isLoading && messages && messages.length > 0 && messagesContainerRef.current) {
+      // Use smooth scrolling only when messages are added after initial load
+      const container = messagesContainerRef.current;
+      container.scrollTop = container.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages]);
   
-  // Additional effect to ensure immediate scroll to bottom on initial load
+  // Immediate scroll to bottom on initial load (no animation)
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    const scrollToBottom = () => {
+      if (messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+    
+    // Scroll immediately and also after brief delays to ensure DOM is ready
+    scrollToBottom();
+    const timer1 = setTimeout(scrollToBottom, 50);
+    const timer2 = setTimeout(scrollToBottom, 200);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, []);
+
+  // Also scroll to bottom immediately when data finishes loading
+  useEffect(() => {
+    if (!isLoading && messages && messages.length > 0 && messagesContainerRef.current) {
+      const scrollToBottom = () => {
+        const container = messagesContainerRef.current;
+        container.scrollTop = container.scrollHeight;
+      };
+      
+      // Multiple attempts to ensure scroll happens
+      scrollToBottom();
+      const timer1 = setTimeout(scrollToBottom, 10);
+      const timer2 = setTimeout(scrollToBottom, 100);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+  }, [isLoading, messages]);
 
   // Auto-hide notification after 3 seconds
   useEffect(() => {
@@ -101,78 +164,104 @@ export default function Chat() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     
-    if (!inputText.trim() || isProcessing) return;
+    if (!inputText.trim() || isProcessingExpense) return;
+    
+    const messageText = inputText;
+    setInputText(''); // Clear input immediately
     
     try {
-      // Use our custom hook to send the message
-      await sendMessage(inputText);
-      setInputText('');
+      // Step 1: Add user message immediately (optimistic update)
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        content: messageText,
+        message_type: 'user',
+        timestamp: new Date().toISOString()
+      };
       
-      // After sending user message, try to parse it as an expense
+      // Add user message to UI immediately
+      mutate(prevMessages => [
+        ...(prevMessages || []),
+        userMessage
+      ], false);
+      
+      // Step 2: Start expense processing and show loading animation
+      setIsProcessingExpense(true);
+      
       try {
-        const expenseData = await chatService.parseExpense(inputText);
+        // Send user message to server and parse expense in parallel
+        const [userResponse, expenseData] = await Promise.all([
+          chatService.sendMessage(messageText, 'user'),
+          chatService.parseExpense(messageText)
+        ]);
         
         if (expenseData && expenseData.id) {
           console.log('Expense parsed successfully:', expenseData);
           
-          // Create a clean confirmation message
+          // Create expense confirmation message
           const responseText = `✅ Expense saved: ${expenseData.short_text || 'Item'} - ${getCurrencySymbol(expenseData.currency)}${expenseData.amount}`;
           
-          // Create a custom message object with the expense data directly attached
           const expenseMessage = {
+            id: `expense-${Date.now()}`,
             content: responseText,
             message_type: 'system',
-            expenseData: expenseData, // Attach expense data directly
-            id: `expense-${Date.now()}`,
-            createdAt: new Date().toISOString(),
-            direction: 'incoming'
+            timestamp: new Date().toISOString(),
+            expenseData: expenseData
           };
           
-          // Send the message to the server first
-          const serverResponse = await chatService.sendMessage(responseText, 'system', expenseData);
+          // Step 3: Add expense card to UI (replaces loading animation)
+          mutate(prevMessages => [
+            ...(prevMessages || []),
+            expenseMessage
+          ], false);
           
-          // Then update our local cache with both the server response and our custom message
-          // We'll use the server message ID if available
-          const messageId = serverResponse?.id || expenseMessage.id;
-          const finalExpenseMessage = {
-            ...expenseMessage,
-            id: messageId
-          };
-          
-          // Store the expense data in our persistent cache using the message ID as the key
+          // Store expense data in cache
           setExpenseDataCache(prev => ({
             ...prev,
-            [messageId]: expenseData
+            [expenseMessage.id]: expenseData
           }));
           
-          // Add our custom message to the cache and prevent revalidation
-          mutate(prevMessages => {
-            // Filter out any temporary messages with the same content
-            const filteredMessages = prevMessages?.filter(msg => 
-              !(msg.content === responseText && !msg.id.startsWith('expense-'))
-            ) || [];
-            
-            return [...filteredMessages, finalExpenseMessage];
-          }, false); // false means don't revalidate with the server
+          // Send expense message to server (in background, don't wait)
+          chatService.sendMessage(responseText, 'system', expenseData).catch(err => {
+            console.warn('Failed to sync expense message to server:', err);
+          });
         } else {
-          console.log('Message was not an expense, continuing conversation');
-          
-          // Send a system response for non-expense messages
-          await sendMessage("I understand. Let me know if you have any expenses to track!", 'system');
+          // Update user message with server response if no expense
+          if (userResponse?.id) {
+            mutate(prevMessages => 
+              prevMessages?.map(msg => 
+                msg.id === userMessage.id 
+                  ? { ...msg, id: userResponse.id }
+                  : msg
+              ) || [],
+              false
+            );
+          }
         }
-      } catch (expenseError) {
-        console.error('Error parsing expense:', expenseError);
-        
-        // Send an error response
-        await sendMessage("Sorry, I couldn't process that as an expense. Please check the format and try again.", 'system');
+      } catch (err) {
+        console.error('Failed to parse expense:', err);
+        // If expense parsing fails, still update user message with server response
+        const userResponse = await chatService.sendMessage(messageText, 'user').catch(() => null);
+        if (userResponse?.id) {
+          mutate(prevMessages => 
+            prevMessages?.map(msg => 
+              msg.id === userMessage.id 
+                ? { ...msg, id: userResponse.id }
+                : msg
+            ) || [],
+            false
+          );
+        }
+      } finally {
+        setIsProcessingExpense(false);
       }
       
     } catch (err) {
-      console.error('Failed to send message:', err);
+      console.error('Failed to process message:', err);
       setNotification({
         type: 'error',
         message: 'Failed to send message. Please try again.'
       });
+      setIsProcessingExpense(false);
     }
   };
 
@@ -194,7 +283,10 @@ export default function Chat() {
       }
       
       // Use our custom hook to delete the message
-      await deleteMessage(msgId);
+      await mutate(prevMessages => 
+        prevMessages?.filter(msg => msg.id !== msgId) || [], 
+        false
+      );
       
       // Clear the confirmation dialog
       setShowConfirmDelete(null);
@@ -221,9 +313,9 @@ export default function Chat() {
           <meta name="description" content="Chat with your expense assistant" />
         </Head>
         
-        <div className="flex flex-col h-full bg-gray-50">
+        <div className="flex flex-col h-[calc(100vh-4rem)] bg-gray-50">
           {/* Header */}
-          <header className="bg-white shadow-sm p-4 flex items-center justify-between">
+          <header className="bg-white shadow-sm p-4 flex items-center justify-between flex-shrink-0">
             <h1 className="text-xl font-semibold text-gray-800">Chat</h1>
             <div className="text-sm text-gray-500">
               {messages.length} {messages.length === 1 ? 'message' : 'messages'}
@@ -232,58 +324,53 @@ export default function Chat() {
           
           {/* Messages Area or Loading State */}
           {isLoading ? (
-            <div className="flex flex-col space-y-4 p-4">
+            <div className="flex flex-col space-y-4 p-4 flex-1 overflow-y-auto">
               <SkeletonMessageGroup count={5} />
             </div>
           ) : error ? (
-            <div className="text-center p-4">
-              <p className="text-red-500 mb-4">Failed to load messages. Please try again.</p>
-              <button 
-                onClick={mutate}
-                className="btn-primary"
-              >
-                Try Again
-              </button>
+            <div className="text-center p-4 flex-1 flex items-center justify-center">
+              <div>
+                <p className="text-red-500 mb-4">Failed to load messages. Please try again.</p>
+                <button 
+                  onClick={mutate}
+                  className="btn-primary"
+                >
+                  Try Again
+                </button>
+              </div>
             </div>
           ) : (
-            <MessageContext.Provider value={{ parseExpenseData, expenseDataCache }}>
-              <div className="flex flex-col flex-1 overflow-y-auto px-4 pt-4 pb-2 space-y-4" ref={messagesContainerRef}>
+            <MessageContext.Provider value={{ parseExpenseData: () => {}, expenseDataCache, expenses }}>
+              <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-4" ref={messagesContainerRef}>
                 <AnimatePresence initial={false} mode="popLayout">
                   {messages.map(message => {
-                    const isTemp = message.id?.startsWith('temp-') || false;
-                    const isUser = message.message_type === 'user';
-                    const isExpenseMessage = !isUser && (
-                      (message.expenseData) || // Check for direct expense data
-                      (message.content && (
-                        message.content.includes('Expense saved:') || 
-                        message.content.includes('✅ Expense saved:')
-                      ))
-                    );
+                    const isExpenseMessage = message.content.includes('Expense saved:') && 
+                                           message.message_type === 'system';
                     
                     return (
                       <motion.div
-                        key={message.id || message.localId || `msg-${Math.random()}`}
-                        initial={isTemp ? false : { opacity: 0, y: 20 }}
+                        key={message.id}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={isTemp ? { opacity: 0, y: 0, transition: { duration: 0 } } : { opacity: 0, y: -20, transition: { duration: 0.3 } }}
+                        exit={{ opacity: 0, y: -20, height: 0 }}
                         transition={{ duration: 0.3 }}
-                        className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+                        className={`flex ${message.message_type === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
                       >
-                        {isUser ? (
-                          <div 
-                            className="max-w-[75%] px-4 py-3 bg-gradient-primary text-white rounded-3xl shadow-sm"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setShowConfirmDelete({ id: message.id, type: 'message' });
-                            }}
-                          >
-                            <p className="whitespace-pre-line">{message.content}</p>
+                        {message.message_type === 'user' ? (
+                          <div className="max-w-xs sm:max-w-sm md:max-w-md px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-200">
+                            <p>{message.content}</p>
                           </div>
                         ) : isExpenseMessage ? (
-                          <div className="flex justify-center mb-4">
+                          <div className="w-full max-w-sm">
                             <ExpenseMessage 
                               message={message}
                               onDelete={(expenseId, msgId) => {
+                                // Optimistically remove from UI immediately
+                                mutate(prevMessages => 
+                                  prevMessages?.filter(msg => msg.id !== msgId) || [], 
+                                  false
+                                );
+                                
                                 // If the expense was deleted, show a success notification
                                 if (expenseId) {
                                   setNotification({
@@ -305,7 +392,7 @@ export default function Chat() {
                 </AnimatePresence>
                 
                 {/* Show loading animation when processing a message */}
-                {isProcessing && (
+                {isProcessingExpense && (
                   <div className="flex justify-start mb-4">
                     <LoadingAnimation size="small" />
                   </div>
@@ -317,21 +404,21 @@ export default function Chat() {
             </MessageContext.Provider>
           )}
           
-          {/* Message Input */}
-          <div className="bg-white border-t border-gray-200 p-4">
-            <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+          {/* Message Input - Fixed at bottom */}
+          <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
+            <form onSubmit={handleSendMessage} className="flex items-center space-x-3">
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 placeholder="Type a message..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                disabled={isProcessing}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+                disabled={isProcessingExpense}
               />
               <button
                 type="submit"
-                className="p-2 rounded-full bg-gradient-primary text-white disabled:opacity-50"
-                disabled={!inputText.trim() || isProcessing}
+                className="p-3 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                disabled={!inputText.trim() || isProcessingExpense}
               >
                 <Send className="w-5 h-5" />
               </button>
@@ -364,7 +451,7 @@ export default function Chat() {
           
           {/* Notification */}
           {notification && (
-            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 ease-in-out"
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 ease-in-out"
               style={{
                 backgroundColor: notification.type === 'success' ? '#10B981' : '#EF4444',
                 color: 'white'
