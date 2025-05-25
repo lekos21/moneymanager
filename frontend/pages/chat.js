@@ -8,6 +8,7 @@ import chatService from '../services/chatService';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DynamicIcon from '../components/DynamicIcon';
 import ExpenseCard, { getCurrencySymbol } from '../components/ExpenseCard';
+import MultiExpenseCard from '../components/MultiExpenseCard';
 import { Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMessages } from '../hooks/useMessages';
@@ -23,57 +24,105 @@ const ExpenseMessage = memo(({ message, onDelete }) => {
   // Get parseExpenseData from context and expenseDataCache
   const { parseExpenseData, expenseDataCache, expenses } = useContext(MessageContext);
   
-  // Memoize the parsed expense data to prevent re-parsing on every render
-  const expense = useMemo(() => {
-    // First check if we have this message's expense data in our persistent cache
-    if (expenseDataCache && expenseDataCache[message.id]) {
-      return expenseDataCache[message.id];
+  // Get expenses using reliable expense_ids lookup
+  const messageExpenses = useMemo(() => {
+    // First check if we have expense data in persistent cache
+    if (expenseDataCache && expenseDataCache[message.id] && expenseDataCache[message.id].expenses) {
+      return expenseDataCache[message.id].expenses;
     }
     
-    // Then check if expense data is directly available in the message
+    // Then check if expense data is directly available in the message (for new messages)
     if (message.expenseData) {
-      return message.expenseData;
+      return [message.expenseData];
     }
     
-    // Try to correlate with actual expense data from the API
-    if (expenses && expenses.length > 0 && message.content.includes('Expense saved:')) {
-      // Extract expense details from the system message
-      const match = message.content.match(/Expense saved:\s*(.+?)\s*-\s*[€$£¥]?(\d+(?:\.\d{2})?)/);
-      if (match) {
-        const [, description, amount] = match;
+    if (message.multiExpenseData && message.multiExpenseData.expenses) {
+      return message.multiExpenseData.expenses;
+    }
+    
+    // Use expense_ids to look up expenses from API data (most reliable method)
+    if (message.expense_ids && message.expense_ids.length > 0 && expenses && expenses.length > 0) {
+      const foundExpenses = message.expense_ids.map(expenseId => 
+        expenses.find(expense => expense.id === expenseId)
+      ).filter(Boolean); // Remove any undefined expenses
+      
+      if (foundExpenses.length > 0) {
+        return foundExpenses;
+      }
+    }
+    
+    // BACKWARD COMPATIBILITY: Fall back to pattern matching for old messages without expense_ids
+    if (expenses && expenses.length > 0) {
+      // Check for single expense messages
+      if (message.content.includes('Expense saved:')) {
+        const match = message.content.match(/Expense saved:\s*(.+?)\s*-\s*[€$£¥]?(\d+(?:\.\d{2})?)/);
+        if (match) {
+          const [, description, amount] = match;
+          const messageTime = new Date(message.timestamp);
+          
+          const matchingExpense = expenses.find(expense => {
+            const expenseTime = new Date(expense.timestamp);
+            const timeDiff = Math.abs(expenseTime - messageTime);
+            const amountMatch = Math.abs(parseFloat(expense.amount) - parseFloat(amount)) < 0.01;
+            const descriptionMatch = expense.short_text?.toLowerCase().includes(description.toLowerCase()) ||
+                                   expense.raw_text?.toLowerCase().includes(description.toLowerCase());
+            
+            return timeDiff <= 10000 && amountMatch && descriptionMatch;
+          });
+          
+          if (matchingExpense) {
+            return [matchingExpense];
+          }
+        }
+      }
+      
+      // Check for multi-expense messages
+      const multiMatch = message.content.match(/(\d+)\s+expenses\s+saved\s+successfully/i);
+      if (multiMatch) {
+        const expectedCount = parseInt(multiMatch[1]);
         const messageTime = new Date(message.timestamp);
         
-        // Find matching expense within 10 seconds of the message timestamp
-        const matchingExpense = expenses.find(expense => {
+        const matchingExpenses = expenses.filter(expense => {
           const expenseTime = new Date(expense.timestamp);
           const timeDiff = Math.abs(expenseTime - messageTime);
-          const amountMatch = Math.abs(parseFloat(expense.amount) - parseFloat(amount)) < 0.01;
-          const descriptionMatch = expense.short_text?.toLowerCase().includes(description.toLowerCase()) ||
-                                 expense.raw_text?.toLowerCase().includes(description.toLowerCase());
-          
-          // Match if within 10 seconds and amounts/descriptions are similar
-          return timeDiff <= 10000 && amountMatch && descriptionMatch;
+          return timeDiff <= 10000;
         });
         
-        if (matchingExpense) {
-          console.log(`[Chat] Found matching expense for message: ${matchingExpense.id}`);
-          return matchingExpense;
+        if (matchingExpenses.length === expectedCount && expectedCount > 1) {
+          return matchingExpenses;
         }
       }
     }
     
-    // Otherwise try to parse it from the content (fallback)
-    return parseExpenseData(message.id, message.content);
-  }, [message.id, message.content, message.timestamp, parseExpenseData, message.expenseData, expenseDataCache, expenses]);
+    return null;
+  }, [message.id, message.expense_ids, message.expenseData, message.multiExpenseData, expenseDataCache, expenses]);
   
-  if (!expense) return null;
+  // If no expenses found, don't render anything
+  if (!messageExpenses || messageExpenses.length === 0) {
+    return null;
+  }
+  
+  // Render MultiExpenseCard for multiple expenses
+  if (messageExpenses.length > 1) {
+    return (
+      <MultiExpenseCard 
+        expenses={messageExpenses}
+        totalCount={messageExpenses.length}
+        processingTime={0}
+        originalText={message.content.includes('expenses saved successfully') ? null : message.content}
+        error=""
+      />
+    );
+  }
+  
+  // Render single ExpenseCard for single expense
+  const expense = messageExpenses[0];
   
   return (
     <ExpenseCard 
       expense={expense} 
       messageId={message.id} 
       onDelete={onDelete} 
-      fullWidth={true} 
     />
   );
 });
@@ -101,7 +150,7 @@ export default function Chat() {
   } = useMessages();
 
   // Use our custom hook for expenses
-  const { expenses } = useExpenses();
+  const { expenses, mutate: mutateExpenses } = useExpenses();
 
   // Scroll to bottom when messages change or when initially loaded
   useEffect(() => {
@@ -189,23 +238,29 @@ export default function Chat() {
       
       try {
         // Send user message to server and parse expense in parallel
-        const [userResponse, expenseData] = await Promise.all([
+        const [userResponse, expenseResult] = await Promise.all([
           chatService.sendMessage(messageText, 'user'),
-          chatService.parseExpense(messageText)
+          chatService.parseExpensesSmart(messageText)
         ]);
         
-        if (expenseData && expenseData.id) {
-          console.log('Expense parsed successfully:', expenseData);
-          
-          // Create expense confirmation message
-          const responseText = `✅ Expense saved: ${expenseData.short_text || 'Item'} - ${getCurrencySymbol(expenseData.currency)}${expenseData.amount}`;
+        if (expenseResult && expenseResult.expenses && expenseResult.expenses.length > 0) {
+          // Create appropriate response message based on expense count
+          let responseText;
+          if (expenseResult.total_count === 1) {
+            const expense = expenseResult.expenses[0];
+            responseText = `✅ Expense saved: ${expense.short_text || 'Item'} - ${getCurrencySymbol(expense.currency)}${expense.amount}`;
+          } else {
+            responseText = `✅ ${expenseResult.total_count} expenses saved successfully`;
+          }
           
           const expenseMessage = {
             id: `expense-${Date.now()}`,
             content: responseText,
             message_type: 'system',
             timestamp: new Date().toISOString(),
-            expenseData: expenseData
+            expense_ids: expenseResult.expenses.map(expense => expense.id), // Store expense IDs for reliable lookup
+            expenseData: expenseResult.total_count === 1 ? expenseResult.expenses[0] : null,
+            multiExpenseData: expenseResult.total_count > 1 ? expenseResult : null
           };
           
           // Step 3: Add expense card to UI (replaces loading animation)
@@ -214,16 +269,24 @@ export default function Chat() {
             expenseMessage
           ], false);
           
-          // Store expense data in cache
+          // Store expense data in cache - always store the full result for consistency
           setExpenseDataCache(prev => ({
             ...prev,
-            [expenseMessage.id]: expenseData
+            [expenseMessage.id]: expenseResult
           }));
           
           // Send expense message to server (in background, don't wait)
-          chatService.sendMessage(responseText, 'system', expenseData).catch(err => {
+          chatService.sendMessage(
+            responseText, 
+            'system', 
+            null, // Don't send complex expense data, just use IDs for lookup
+            expenseResult.expenses.map(expense => expense.id)
+          ).catch(err => {
             console.warn('Failed to sync expense message to server:', err);
           });
+          
+          // Revalidate expenses
+          mutateExpenses();
         } else {
           // Update user message with server response if no expense
           if (userResponse?.id) {
@@ -344,8 +407,12 @@ export default function Chat() {
               <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-4" ref={messagesContainerRef}>
                 <AnimatePresence initial={false} mode="popLayout">
                   {messages.map(message => {
-                    const isExpenseMessage = message.content.includes('Expense saved:') && 
-                                           message.message_type === 'system';
+                    const isExpenseMessage = (
+                      (message.content.includes('Expense saved:') || 
+                       message.content.includes('expenses saved successfully') ||
+                       (message.expense_ids && message.expense_ids.length > 0)) &&
+                      message.message_type === 'system'
+                    );
                     
                     return (
                       <motion.div

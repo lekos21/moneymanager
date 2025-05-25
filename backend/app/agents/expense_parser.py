@@ -41,11 +41,9 @@ def create_expense_parser(db_client, default_currency):
     
     print(f"Using API key starting with: {api_key[:5]}...")
     
-    # Use a reliably available model (gpt-3.5-turbo is widely available)
-    # This can be updated to gpt-4o-mini or another model that's definitely available in your account
     model = ChatOpenAI(
-        model="gpt-4.1-nano",  # More reliable model name
-        temperature=0,  # Low temperature for more deterministic outputs
+        model="gpt-4.1-nano",  # Fastest, cheapest model available
+        temperature=0.3,  # Low temperature for more deterministic outputs
         openai_api_key=api_key,  # Explicitly pass the API key
     )
     

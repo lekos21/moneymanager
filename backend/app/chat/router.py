@@ -12,6 +12,8 @@ db = firestore.client()
 class MessageCreate(BaseModel):
     content: str
     message_type: Literal["user", "system"] = "user"
+    expense_data: Optional[dict] = None  # Store expense data for system messages
+    expense_ids: Optional[List[str]] = None  # Store expense IDs for reliable lookup
     
 class Message(BaseModel):
     id: str
@@ -19,6 +21,8 @@ class Message(BaseModel):
     user_id: str
     timestamp: datetime
     message_type: Literal["user", "system"]
+    expense_data: Optional[dict] = None  # Include expense data in response
+    expense_ids: Optional[List[str]] = None  # Include expense IDs in response
     
     class Config:
         json_encoders = {
@@ -40,7 +44,9 @@ async def create_message(
         "content": message.content,
         "user_id": user_id,
         "timestamp": firestore.SERVER_TIMESTAMP,
-        "message_type": message.message_type
+        "message_type": message.message_type,
+        "expense_data": message.expense_data,
+        "expense_ids": message.expense_ids
     }
     
     # Add the message to Firestore
@@ -57,7 +63,9 @@ async def create_message(
         content=message_dict["content"],
         user_id=message_dict["user_id"],
         timestamp=message_dict.get("timestamp", datetime.now()),  # Fallback to current time if server timestamp not available
-        message_type=message_dict["message_type"]
+        message_type=message_dict["message_type"],
+        expense_data=message_dict.get("expense_data"),
+        expense_ids=message_dict.get("expense_ids")
     )
 
 @router.get("/messages", response_model=List[Message])
@@ -99,7 +107,9 @@ async def get_messages(
                         content=message_data["content"],
                         user_id=message_data["user_id"],
                         timestamp=timestamp,
-                        message_type=message_data.get("message_type", "user")
+                        message_type=message_data.get("message_type", "user"),
+                        expense_data=message_data.get("expense_data"),
+                        expense_ids=message_data.get("expense_ids")
                     )
                 )
             except Exception as e:

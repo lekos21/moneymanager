@@ -97,13 +97,14 @@ export const chatService = {
   },
   
   // Send a new message
-  async sendMessage(content, messageType = 'user', expenseData = null) {
+  async sendMessage(content, messageType = 'user', expenseData = null, expenseIds = null) {
     try {
       const request = await createAuthenticatedRequest();
       const response = await request.post('/api/chat/messages', { 
         content,
         message_type: messageType,
-        expense_data: expenseData // Include expense data if provided
+        expense_data: expenseData, // Include expense data if provided
+        expense_ids: expenseIds // Include expense IDs if provided
       });
       return response.data;
     } catch (error) {
@@ -139,6 +140,68 @@ export const chatService = {
       console.error('Error parsing expense:', error);
       console.error('Error details:', error.response?.data);
       throw error;
+    }
+  },
+
+  // Detect if text contains single or multiple expenses
+  detectExpenseCount(text) {
+    // Match monetary patterns: "10 euros", "$5", "€3.50", etc.
+    const moneyRegex = /(?:€|£|\$|¥)?\d+(?:\.\d{2})?(?:\s*(?:euros?|dollars?|pounds?|yen|gbp|usd|eur|jpy))?/gi;
+    const matches = text.match(moneyRegex);
+    
+    if (!matches || matches.length <= 1) {
+      return 'single'; // 0 or 1 monetary amount = single expense parser
+    } else {
+      return 'multiple'; // 2+ monetary amounts = multi-expense parser
+    }
+  },
+
+  // Parse multiple expenses from text
+  async parseMultipleExpenses(content) {
+    try {
+      const request = await createAuthenticatedRequest();
+      console.log('Sending multi-expense parser request:', { text: content, save_to_db: true });
+      const response = await request.post('/api/agents/multi_expense_parser/', {
+        text: content,
+        save_to_db: true // Automatically save to Firestore
+      });
+      console.log('Multi-expense parser response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error parsing multiple expenses:', error);
+      console.error('Error details:', error.response?.data);
+      throw error;
+    }
+  },
+
+  // Smart expense parsing that chooses single or multi-expense parser
+  async parseExpensesSmart(content) {
+    try {
+      const expenseType = this.detectExpenseCount(content);
+      console.log(`Detected expense type: ${expenseType} for text: "${content}"`);
+      
+      if (expenseType === 'multiple') {
+        return await this.parseMultipleExpenses(content);
+      } else {
+        // For single expenses, return in the same format as multi-expense
+        const singleResult = await this.parseExpense(content);
+        return {
+          expenses: singleResult ? [singleResult] : [],
+          total_count: singleResult ? 1 : 0,
+          processing_time: 0,
+          original_text: content,
+          error: ""
+        };
+      }
+    } catch (error) {
+      console.error('Error in smart expense parsing:', error);
+      return {
+        expenses: [],
+        total_count: 0,
+        processing_time: 0,
+        original_text: content,
+        error: error.message || 'Unknown error'
+      };
     }
   }
 };
