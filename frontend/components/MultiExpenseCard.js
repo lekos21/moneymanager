@@ -2,6 +2,26 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ExpenseCard from './ExpenseCard';
+import { formatCurrency } from '../utils/formatters';
+
+// Currency symbol mapping (same as ExpenseCard)
+const currencySymbols = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CAD: 'C$',
+  AUD: 'A$',
+  CHF: 'Fr',
+  CNY: '¥',
+  INR: '₹',
+  BRL: 'R$'
+};
+
+// Get currency symbol or fallback to currency code
+const getCurrencySymbol = (code) => {
+  return currencySymbols[code] || code;
+};
 
 const MultiExpenseCard = ({ 
   expenses, 
@@ -11,6 +31,15 @@ const MultiExpenseCard = ({
   error 
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Calculate total amount
+  const totalAmount = expenses?.reduce((sum, expense) => {
+    const amount = parseFloat(expense.amount || 0);
+    return sum + (isNaN(amount) ? 0 : amount);
+  }, 0) || 0;
+
+  // Get currency symbol from first expense (assuming all expenses use same currency)
+  const currencySymbol = expenses?.[0]?.currency ? getCurrencySymbol(expenses[0].currency) : '$';
 
   if (error) {
     return (
@@ -32,11 +61,16 @@ const MultiExpenseCard = ({
       >
         <div className="flex items-center space-x-3">
           <div>
-            <h3 className="font-semibold text-gray-800 text-base">
-              ✅ {totalCount} expenses saved
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-800 text-base">
+                ✅ {totalCount} expenses saved
+              </h3>
+              <span className="text-lg font-bold text-gray-900 ml-4">
+                {formatCurrency(totalAmount, currencySymbol)}
+              </span>
+            </div>
             {processingTime != null && processingTime > 0 && (
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 mt-1">
                 Processed in {processingTime.toFixed(1)}s
               </span>
             )}

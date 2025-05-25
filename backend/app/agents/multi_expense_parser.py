@@ -70,9 +70,6 @@ async def split_multi_expense_text(text: str, user_id: str, db_client: firestore
         Input: "$10 for coffee, $15 for lunch, $20 for dinner"
         Output: ["$10 for coffee", "$15 for lunch", "$20 for dinner"]
         
-        Input: "€15 for lunch, $20 for taxi, £10 for drinks"
-        Output: ["€15 for lunch", "$20 for taxi", "£10 for drinks"]
-        
         Input: "Morning coffee was $4.50, then lunch at $18.75"
         Output: ["Morning coffee was $4.50", "lunch at $18.75"]
         

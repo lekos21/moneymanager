@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts/core';
 import LoadingAnimation from './LoadingAnimation';
-import userService from '../services/userService';
+import { useUserData } from '../hooks/useUserData';
 import { getCurrencySymbol } from '../utils/formatters';
 
 const MonthlyExpenseChart = ({ 
@@ -14,21 +14,17 @@ const MonthlyExpenseChart = ({
   budget 
 }) => {
   const [chartOptions, setChartOptions] = useState({});
-  const [currencySymbol, setCurrencySymbol] = useState('$');
+  const { userData } = useUserData();
+  
+  // Get user's preferred currency symbol, don't render until we have it
+  const currencySymbol = userData?.preferred_currency 
+    ? getCurrencySymbol(userData.preferred_currency) 
+    : null;
 
   useEffect(() => {
-    const fetchCurrency = async () => {
-      try {
-        const data = await userService.getUserData();
-        setCurrencySymbol(getCurrencySymbol(data.preferred_currency));
-      } catch (err) {
-        console.error('Error fetching currency:', err);
-      }
-    };
-    fetchCurrency();
-  }, []);
-
-  useEffect(() => {
+    // Only proceed if we have currency symbol data
+    if (!currencySymbol) return;
+    
     // Calculate budget progress
     const budgetProgress = budget ? (monthlyTotal / budget) * 100 : null;
     const budgetRemaining = budget ? budget - monthlyTotal : null;
@@ -206,8 +202,11 @@ const MonthlyExpenseChart = ({
         ]
       });
     }
-  }, [activeTab, dailyExpenses, weeklyExpenses, monthlyTotal, weeklyTotal, budget]);
+  }, [activeTab, dailyExpenses, weeklyExpenses, monthlyTotal, weeklyTotal, budget, currencySymbol]);
 
+  // Show loading animation until currency symbol is available
+  if (!currencySymbol) return <LoadingAnimation />;
+  
   return (
     <div className="rounded-3xl shadow-lg p-6 text-white overflow-hidden" 
       style={{ background: 'linear-gradient(135deg, #42A5F5, #cf8ef9, #fe9169)' }}>

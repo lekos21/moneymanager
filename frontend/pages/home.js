@@ -41,11 +41,11 @@ export default function Home() {
   // Get budget from user data
   const budget = userData?.budget;
   
-  // Get user's preferred currency symbol, default to $ if not loaded yet
+  // Get user's preferred currency symbol, don't show currency until we have user data
   const currencySymbol = userData?.preferred_currency 
     ? getCurrencySymbol(userData.preferred_currency) 
-    : '$';
-
+    : null;
+  
   // Mock income for now - in a real app, this would come from an API
   const totalIncome = 2500.00;
   const balance = totalIncome - monthlyTotal;
@@ -184,7 +184,9 @@ export default function Home() {
                             <p className="font-medium text-gray-800">{expense.short_text}</p>
                             <p className="text-xs text-gray-500">{formattedDate}</p>
                           </div>
-                          <p className="font-bold text-gray-800">{formatCurrency(-parseFloat(expense.amount), currencySymbol)}</p>
+                          <p className="font-bold text-gray-800">
+                            {currencySymbol ? formatCurrency(-parseFloat(expense.amount), currencySymbol) : '—'}
+                          </p>
                         </div>
                       );
                     })}

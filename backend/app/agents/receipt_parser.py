@@ -178,9 +178,10 @@ async def _extract_receipt_items(image_base64: str, api_key: str, user_id: str =
                         
                         Rules:
                         1. Only include actual purchased items (not tax, tips, subtotals, discounts, etc.)
-                        2. Include the currency symbol if clearly visible, otherwise use $ as default
-                        3. Be concise but descriptive for each item
-                        4. If no expenses are found in the image, respond with exactly: "NO_EXPENSES_FOUND"
+                        2. Add an expense called "Receipt Adjustments" to account for tax, tips, discounts, etc. to get to the total of the receipt (e.g. food 7$, drink 3$, taxes 2$, service 3$, discount 10%, subtotal 15$, Total 13.5$, "Receipt Adjustments" is 3.5 because it's the delta between 10$ of food and drink and 13.5$ of total). on this one write also between brackets (tag: "other")
+                        3. Include the currency symbol if clearly visible, otherwise use $ as default
+                        4. Be concise but descriptive for each item
+                        5. If no expenses are found in the image, respond with exactly: "NO_EXPENSES_FOUND"
                         
                         Example format:
                         Coffee $4.50

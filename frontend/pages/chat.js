@@ -502,9 +502,6 @@ export default function Chat() {
           {/* Header */}
           <header className="bg-white shadow-sm p-4 flex items-center justify-between flex-shrink-0">
             <h1 className="text-xl font-semibold text-gray-800">Chat</h1>
-            <div className="text-sm text-gray-500">
-              {messages.length} {messages.length === 1 ? 'message' : 'messages'}
-            </div>
           </header>
           
           {/* Messages Area or Loading State */}
