@@ -6,6 +6,8 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
+import time
+from .usage_tracker import track_openai_api_call
 
 # Load environment variables from .env file
 load_dotenv()
@@ -110,13 +112,15 @@ def create_tag_generator():
     
     return prompt_and_model, parser
 
-def generate_tag(tag_id: str, facet: str) -> dict:
+def generate_tag(tag_id: str, facet: str, user_id: str = None, db_client = None) -> dict:
     """
     Generate tag information and return a structured tag object
     
     Args:
         tag_id: The ID of the tag to generate
         facet: The facet of the tag (area or context)
+        user_id: Optional user ID for usage tracking
+        db_client: Optional Firestore client for usage tracking
         
     Returns:
         A dictionary containing the generated tag information
@@ -126,10 +130,29 @@ def generate_tag(tag_id: str, facet: str) -> dict:
         prompt_and_model, parser = create_tag_generator()
         
         # Get the model output
+        start_time = time.time()
         output = prompt_and_model.invoke({"tag_id": tag_id, "facet": facet})
+        end_time = time.time()
         
         # Parse the output into our Pydantic model
         result = parser.invoke(output)
+        
+        # Track usage if user_id and db_client are provided
+        if user_id and db_client:
+            try:
+                output_text = str(result.dict()) if hasattr(result, 'dict') else str(result)
+                track_openai_api_call(
+                    user_id=user_id,
+                    db_client=db_client,
+                    agent_name="tag_generator",
+                    model="gpt-4.1-nano",
+                    input_text=f"tag_id: {tag_id}, facet: {facet}",
+                    output_text=output_text,
+                    request_duration=end_time - start_time,
+                    metadata={"function": "generate_tag", "tag_id": tag_id, "facet": facet, "success": True}
+                )
+            except Exception as e:
+                print(f"Warning: Failed to track usage: {e}")
         
         # Convert to dict and add the created_at, embedding, and active fields
         result_dict = result.dict()  # Use .dict() instead of model_dump() in Pydantic v1

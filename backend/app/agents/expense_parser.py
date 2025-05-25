@@ -7,6 +7,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from google.cloud import firestore
+import time
+from .usage_tracker import track_openai_api_call
 
 # Load environment variables from .env file
 load_dotenv()
@@ -145,12 +147,30 @@ def parse_expense(text: str, user_id: str, db_client: firestore.Client) -> dict:
         
         # Get the model output
         print(f"Sending to LLM: '{text}'")
+        start_time = time.time()
         output = prompt_and_model.invoke({"query": text})
+        end_time = time.time()
         print(f"LLM output: {output}")
         
         # Parse the output into our Pydantic model
         result = parser.invoke(output)
         print(f"Parsed result: {result}")
+        
+        # Track the API call
+        try:
+            output_text = str(result.dict()) if hasattr(result, 'dict') else str(result)
+            track_openai_api_call(
+                user_id=user_id,
+                db_client=db_client,
+                agent_name="expense_parser",
+                model="gpt-4.1-nano",
+                input_text=text,
+                output_text=output_text,
+                request_duration=end_time - start_time,
+                metadata={"function": "parse_expense", "success": True}
+            )
+        except Exception as e:
+            print(f"Warning: Failed to track usage: {e}")
         
         # Convert to dict and add the user_id, timestamp, and raw_text
         result_dict = result.dict()  # Use .dict() instead of model_dump() in Pydantic v1

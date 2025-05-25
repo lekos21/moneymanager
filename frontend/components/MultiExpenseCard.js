@@ -14,7 +14,7 @@ const MultiExpenseCard = ({
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <div className="flex items-center">
           <span className="text-red-600 text-sm font-medium">Error parsing expenses:</span>
         </div>
@@ -24,7 +24,7 @@ const MultiExpenseCard = ({
   }
 
   return (
-    <div className="bg-gray-50/50 border border-gray-200/60 rounded-xl p-4 mt-4 shadow-sm hover:shadow-md transition-all duration-200">
+    <div className="bg-gray-50/50 border border-gray-200/60 rounded-xl p-4 shadow-md hover:shadow-xl transition-all duration-200">
       {/* Header */}
       <div 
         className="flex items-center justify-between cursor-pointer group"

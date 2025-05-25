@@ -7,14 +7,14 @@ expense items and integrate them with the multi-expense parser.
 
 import os
 import base64
-import requests
 from typing import Dict, List, Any
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from google.cloud import firestore
-
 from .multi_expense_parser import parse_multiple_expenses
-
+from .usage_tracker import track_openai_api_call
+import time
+import requests
 
 async def parse_receipt_image(
     image_content: bytes,
@@ -58,8 +58,11 @@ async def parse_receipt_image(
         if api_key.startswith('"') and api_key.endswith('"'):
             api_key = api_key[1:-1]
         
+        # Initialize Firestore client
+        db = firestore.Client()
+        
         # Extract receipt items using GPT-4o vision
-        extracted_text = await _extract_receipt_items(image_base64, api_key)
+        extracted_text = await _extract_receipt_items(image_base64, api_key, user_id, db)
         
         # Check if no expenses were found
         if "NO_EXPENSES_FOUND" in extracted_text.upper():
@@ -67,9 +70,6 @@ async def parse_receipt_image(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No expenses found in the uploaded image. Please ensure this is a clear receipt photo."
             )
-        
-        # Initialize Firestore client
-        db = firestore.Client()
         
         # Process the extracted text through the multi-expense parser
         print("Processing extracted text through multi-expense parser...")
@@ -82,11 +82,11 @@ async def parse_receipt_image(
                 detail="Could not parse any valid expenses from the receipt. Please ensure the image shows clear item names and prices."
             )
         
-        # If save_to_db is true, save all expenses to Firestore
+        # If save_to_db is true, save all expenses to Firestore (using same logic as multi-expense parser)
         if save_to_db and multi_expense_result.expenses:
             print(f"Saving {len(multi_expense_result.expenses)} expenses from receipt to Firestore")
             
-            # Enhance expenses with database info
+            # Enhance expenses with database info (same as multi-expense parser endpoint)
             enhanced_expenses = []
             for expense in multi_expense_result.expenses:
                 # Convert ExpenseData to dict for saving
@@ -94,7 +94,7 @@ async def parse_receipt_image(
                 expense_dict.update({
                     "user_id": user_id,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "raw_text": f"Receipt: {expense.short_text}",  # Mark as receipt item
+                    "raw_text": extracted_text,  # Use extracted text for context
                     "receipt_source": True  # Flag to indicate this came from a receipt
                 })
                 
@@ -117,7 +117,7 @@ async def parse_receipt_image(
                 "receipt_filename": filename
             }
         
-        # Return parsed result without saving
+        # Return parsed result without saving (convert ExpenseData objects to dicts)
         return {
             "expenses": [expense.dict() for expense in multi_expense_result.expenses],
             "total_count": multi_expense_result.total_count,
@@ -140,13 +140,15 @@ async def parse_receipt_image(
         )
 
 
-async def _extract_receipt_items(image_base64: str, api_key: str) -> str:
+async def _extract_receipt_items(image_base64: str, api_key: str, user_id: str = None, db: firestore.Client = None) -> str:
     """
     Extract receipt items using OpenAI GPT-4o vision API.
     
     Args:
         image_base64: Base64 encoded image
         api_key: OpenAI API key
+        user_id: Optional user ID for usage tracking
+        db: Firestore client for usage tracking
         
     Returns:
         Extracted text containing receipt items
@@ -202,12 +204,14 @@ async def _extract_receipt_items(image_base64: str, api_key: str) -> str:
     }
     
     print("Calling OpenAI Vision API...")
+    start_time = time.time()
     response = requests.post(
         "https://api.openai.com/v1/chat/completions",
         headers=headers,
         json=payload,
         timeout=30
     )
+    end_time = time.time()
     
     if response.status_code != 200:
         print(f"OpenAI API error: {response.status_code} - {response.text}")
@@ -219,5 +223,21 @@ async def _extract_receipt_items(image_base64: str, api_key: str) -> str:
     result = response.json()
     extracted_text = result['choices'][0]['message']['content'].strip()
     print(f"Extracted text from receipt: {extracted_text}")
+    
+    # Track usage if user_id and db are provided
+    if user_id and db:
+        try:
+            track_openai_api_call(
+                user_id=user_id,
+                db_client=db,
+                agent_name="receipt_parser_vision",
+                model="gpt-4o",
+                input_text="[Receipt Image Analysis]",
+                output_text=extracted_text,
+                request_duration=end_time - start_time,
+                metadata={"function": "receipt_vision", "success": True}
+            )
+        except Exception as e:
+            print(f"Warning: Failed to track usage: {e}")
     
     return extracted_text

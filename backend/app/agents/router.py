@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
@@ -9,6 +9,7 @@ from .expense_parser import parse_expense as ai_parse_expense, ExpenseData
 from .multi_expense_parser import parse_multiple_expenses, detect_expense_count, MultiExpenseResult
 from .tag_generator import generate_tag as ai_generate_tag
 from .receipt_parser import parse_receipt_image
+from .usage_service import UsageService
 from google.cloud import firestore
 import requests
 import os
@@ -119,19 +120,11 @@ def generate_tag(query: TagGenerationQuery, current_user: dict = Depends(get_cur
         }
     """
     try:
-        # Generate the tag information using our AI generator
-        tag_data = ai_generate_tag(query.area, query.context)
-        
-        # Save the tag to the database using the tags endpoint
+        # Initialize Firestore client
         db = firestore.Client()
         
-        # Check if tag already exists
-        existing_tag = db.collection('tags').document(query.area).get()
-        if existing_tag.exists:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Tag with ID '{query.area}' already exists"
-            )
+        # Generate the tag data using the AI generator
+        tag_data = ai_generate_tag(query.area, query.context, current_user["user_id"], db)
         
         # Save the tag to Firestore
         doc_ref = db.collection('tags').document(query.area)
@@ -184,7 +177,7 @@ def bulk_generate_tags(query: TagGenerationQuery, current_user: dict = Depends(g
                 continue
                 
             # Generate tag data
-            tag_data = ai_generate_tag(tag_id, "area")
+            tag_data = ai_generate_tag(tag_id, "area", current_user["user_id"], db)
             
             # Save to Firestore
             doc_ref = db.collection('tags').document(tag_id)
@@ -204,7 +197,7 @@ def bulk_generate_tags(query: TagGenerationQuery, current_user: dict = Depends(g
                 continue
                 
             # Generate tag data
-            tag_data = ai_generate_tag(tag_id, "context")
+            tag_data = ai_generate_tag(tag_id, "context", current_user["user_id"], db)
             
             # Save to Firestore
             doc_ref = db.collection('tags').document(tag_id)
@@ -319,7 +312,7 @@ async def parse_multi_expense(query: MultiExpenseQuery, current_user: dict = Dep
 @router.post('/receipt_parser/')
 async def parse_receipt(
     file: UploadFile = File(...),
-    save_to_db: bool = False,
+    save_to_db: str = Form("false"),  
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -330,7 +323,7 @@ async def parse_receipt(
     
     Args:
         file: Receipt image file (JPG, PNG, JPEG, WEBP)
-        save_to_db: Whether to save extracted expenses to database
+        save_to_db: Whether to save extracted expenses to database (as string "true"/"false")
         current_user: Authenticated user information
     
     Returns:
@@ -377,6 +370,11 @@ async def parse_receipt(
         # Get the user ID from the authenticated user
         user_id = current_user["user_id"]
         print(f"User ID: {user_id}")
+        print(f"Save to DB parameter: {save_to_db} (type: {type(save_to_db)})")
+        
+        # Convert string save_to_db to boolean
+        save_to_db_bool = save_to_db.lower() in ('true', '1', 'yes')
+        print(f"Save to DB converted: {save_to_db_bool}")
         
         # Read the image content
         image_content = await file.read()
@@ -385,7 +383,7 @@ async def parse_receipt(
         result = await parse_receipt_image(
             image_content=image_content,
             user_id=user_id,
-            save_to_db=save_to_db,
+            save_to_db=save_to_db_bool,
             filename=file.filename
         )
         
@@ -401,4 +399,236 @@ async def parse_receipt(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing receipt: {str(e)}"
+        )
+
+@router.get('/usage/summary/')
+def get_usage_summary(current_user: dict = Depends(get_current_user)):
+    """
+    Get a comprehensive summary of user's AI usage.
+    
+    Returns overview, current month stats, top agents, and models.
+    
+    Example:
+        Response: {
+            "overview": {
+                "total_requests": 250,
+                "total_tokens": 50000,
+                "total_cost_usd": 2.45,
+                "avg_tokens_per_request": 200
+            },
+            "current_month": {
+                "requests": {"value": 45, "change_percent": 15.2, "trend": "up"},
+                "tokens": {"value": 9000, "change_percent": -5.1, "trend": "down"},
+                "cost_usd": {"value": 0.85, "change_percent": 8.3, "trend": "up"}
+            },
+            "top_agents": [...],
+            "top_models": [...]
+        }
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        summary = usage_service.get_usage_summary(user_id)
+        return summary
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving usage summary: {str(e)}"
+        )
+
+@router.get('/usage/monthly/')
+def get_monthly_usage(
+    months: int = 12,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get monthly usage data for the last N months.
+    
+    Args:
+        months: Number of months to retrieve (default: 12)
+    
+    Example:
+        Response: [
+            {
+                "month": "2025-04",
+                "month_name": "April 2025",
+                "requests": 45,
+                "tokens": 9000,
+                "cost_usd": 0.85,
+                "by_agent": {"expense_parser": {...}},
+                "by_model": {"gpt-4.1-nano": {...}}
+            },
+            ...
+        ]
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        monthly_data = usage_service.get_monthly_usage(user_id, months)
+        return monthly_data
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving monthly usage: {str(e)}"
+        )
+
+@router.get('/usage/agents/')
+def get_agent_breakdown(current_user: dict = Depends(get_current_user)):
+    """
+    Get detailed breakdown of usage by agent.
+    
+    Example:
+        Response: [
+            {
+                "name": "expense_parser",
+                "requests": 150,
+                "tokens": 30000,
+                "cost_usd": 1.25,
+                "request_percentage": 60.0,
+                "token_percentage": 55.2,
+                "cost_percentage": 51.0,
+                "avg_tokens_per_request": 200,
+                "avg_cost_per_request": 0.008333
+            },
+            ...
+        ]
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        agent_breakdown = usage_service.get_agent_breakdown(user_id)
+        return agent_breakdown
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving agent breakdown: {str(e)}"
+        )
+
+@router.get('/usage/models/')
+def get_model_breakdown(current_user: dict = Depends(get_current_user)):
+    """
+    Get detailed breakdown of usage by model.
+    
+    Example:
+        Response: [
+            {
+                "name": "gpt-4.1-nano",
+                "requests": 180,
+                "tokens": 35000,
+                "cost_usd": 1.75,
+                "request_percentage": 72.0,
+                "token_percentage": 64.8,
+                "cost_percentage": 71.4,
+                "avg_tokens_per_request": 194,
+                "avg_cost_per_request": 0.009722
+            },
+            ...
+        ]
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        model_breakdown = usage_service.get_model_breakdown(user_id)
+        return model_breakdown
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving model breakdown: {str(e)}"
+        )
+
+@router.get('/usage/alerts/')
+def get_usage_alerts(current_user: dict = Depends(get_current_user)):
+    """
+    Get usage alerts based on thresholds.
+    
+    Example:
+        Response: [
+            {
+                "type": "high_monthly_cost",
+                "severity": "warning",
+                "message": "Monthly AI cost is $12.45",
+                "value": 12.45,
+                "threshold": 10.0
+            },
+            ...
+        ]
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        alerts = usage_service.get_usage_alerts(user_id)
+        return alerts
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving usage alerts: {str(e)}"
+        )
+
+@router.get('/usage/recent/')
+def get_recent_requests(
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get recent AI requests for debugging/monitoring.
+    
+    Args:
+        limit: Number of recent requests to retrieve (default: 20, max: 100)
+    
+    Example:
+        Response: [
+            {
+                "timestamp": "2025-05-25T19:45:00Z",
+                "agent": "expense_parser",
+                "model": "gpt-4.1-nano",
+                "tokens": {"input": 150, "output": 50, "total": 200},
+                "cost_usd": 0.008,
+                "request_duration_seconds": 1.245,
+                "metadata": {"function": "parse_expense", "success": true}
+            },
+            ...
+        ]
+    """
+    try:
+        user_id = current_user["user_id"]
+        
+        # Limit the number of requests to prevent abuse
+        limit = min(limit, 100)
+        
+        # Initialize Firestore and UsageService
+        db = firestore.Client()
+        usage_service = UsageService(db)
+        
+        recent_requests = usage_service.get_recent_requests(user_id, limit)
+        return recent_requests
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving recent requests: {str(e)}"
         )

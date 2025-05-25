@@ -349,7 +349,7 @@ export default function Chat() {
       // Step 1: Add user message for receipt upload
       const userMessage = {
         id: `user-${Date.now()}`,
-        content: `📄 Uploaded receipt: ${file.name}`,
+        content: `📄 Receipt upload completed`,
         message_type: 'user',
         timestamp: new Date().toISOString()
       };
@@ -359,12 +359,29 @@ export default function Chat() {
         userMessage
       ], false);
       
+      // Save user's receipt upload message to server (in background)
+      chatService.sendMessage(userMessage.content, 'user').then(serverResponse => {
+        // Update local message with server ID
+        if (serverResponse?.id) {
+          mutate(prevMessages => 
+            prevMessages?.map(msg => 
+              msg.id === userMessage.id 
+                ? { ...msg, id: serverResponse.id }
+                : msg
+            ) || [],
+            false
+          );
+        }
+      }).catch(err => {
+        console.warn('Failed to sync receipt upload message to server:', err);
+      });
+      
       // Step 2: Process receipt using chatService
       const expenseResult = await chatService.uploadReceipt(file, true);
       
       // Step 3: Add expense results to UI
       const responseText = expenseResult.total_count === 1 
-        ? `Expense saved: ${expenseResult.expenses[0].short_text} - $${expenseResult.expenses[0].amount}`
+        ? `Expense saved: ${expenseResult.expenses[0].short_text} - ${getCurrencySymbol(expenseResult.expenses[0].currency)}${expenseResult.expenses[0].amount}`
         : `${expenseResult.total_count} expenses saved successfully from receipt`;
       
       const expenseMessage = {
@@ -387,6 +404,19 @@ export default function Chat() {
         ...prev,
         [expenseMessage.id]: expenseResult
       }));
+      
+      // Send receipt message to server (in background, don't wait)
+      chatService.sendMessage(
+        responseText, 
+        'system', 
+        null, // Don't send complex expense data, just use IDs for lookup
+        expenseResult.expenses.map(expense => expense.id)
+      ).catch(err => {
+        console.warn('Failed to sync receipt message to server:', err);
+      });
+      
+      // Revalidate expenses
+      mutateExpenses();
       
       setNotification({
         type: 'success',
@@ -496,7 +526,7 @@ export default function Chat() {
             </div>
           ) : (
             <MessageContext.Provider value={{ parseExpenseData: () => {}, expenseDataCache, expenses }}>
-              <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-4" ref={messagesContainerRef}>
+              <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-3" ref={messagesContainerRef}>
                 <AnimatePresence initial={false} mode="popLayout">
                   {messages.map(message => {
                     const isExpenseMessage = (
@@ -513,7 +543,7 @@ export default function Chat() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20, height: 0 }}
                         transition={{ duration: 0.3 }}
-                        className={`flex ${message.message_type === 'user' ? 'justify-end' : 'justify-start'} mb-4`}
+                        className={`flex ${message.message_type === 'user' ? 'justify-end' : 'justify-start'}`}
                       >
                         {message.message_type === 'user' ? (
                           <div className="max-w-xs sm:max-w-sm md:max-w-md px-4 py-3 bg-white text-gray-800 rounded-3xl shadow-sm border border-gray-200">
@@ -552,7 +582,7 @@ export default function Chat() {
                 
                 {/* Show loading animation when processing a message */}
                 {isProcessingExpense && (
-                  <div className="flex justify-start mb-4">
+                  <div className="flex justify-start">
                     <LoadingAnimation size="small" />
                   </div>
                 )}

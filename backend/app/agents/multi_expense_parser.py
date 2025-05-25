@@ -10,7 +10,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from dotenv import load_dotenv
 from google.cloud import firestore
-
+from .usage_tracker import track_openai_api_call
 from .expense_parser import parse_expense, ExpenseData
 
 # Load environment variables
@@ -88,7 +88,26 @@ async def split_multi_expense_text(text: str, user_id: str, db_client: firestore
     chain = prompt | model | parser
     
     try:
+        start_time = time.time()
         result = await chain.ainvoke({"query": text})
+        end_time = time.time()
+        
+        # Track the API call
+        try:
+            output_text = str(result.individual_expenses) if hasattr(result, 'individual_expenses') else str(result)
+            track_openai_api_call(
+                user_id=user_id,
+                db_client=db_client,
+                agent_name="multi_expense_parser_splitter",
+                model="gpt-4.1-nano", 
+                input_text=text,
+                output_text=output_text,
+                request_duration=end_time - start_time,
+                metadata={"function": "split_multi_expense_text", "success": True}
+            )
+        except Exception as e:
+            print(f"Warning: Failed to track usage: {e}")
+        
         return result.individual_expenses
     except Exception as e:
         print(f"Error splitting multi-expense text: {e}")
