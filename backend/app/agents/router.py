@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
+import base64
+import io
 from app.auth.dependencies import get_current_user
 from .expense_parser import parse_expense as ai_parse_expense, ExpenseData
 from .multi_expense_parser import parse_multiple_expenses, detect_expense_count, MultiExpenseResult
 from .tag_generator import generate_tag as ai_generate_tag
+from .receipt_parser import parse_receipt_image
 from google.cloud import firestore
 import requests
 import os
@@ -25,6 +28,10 @@ class TagGenerationQuery(BaseModel):
 class MultiExpenseQuery(BaseModel):
     """Request model for multi-expense parsing"""
     text: str
+    save_to_db: bool = False
+
+class ReceiptParseQuery(BaseModel):
+    """Request model for receipt parsing"""
     save_to_db: bool = False
 
 @router.post('/expense_parser/')
@@ -307,4 +314,91 @@ async def parse_multi_expense(query: MultiExpenseQuery, current_user: dict = Dep
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error parsing multiple expenses: {str(e)}"
+        )
+
+@router.post('/receipt_parser/')
+async def parse_receipt(
+    file: UploadFile = File(...),
+    save_to_db: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Parse receipt information from an uploaded photo using GPT-4o vision.
+    
+    This endpoint processes receipt images to extract a list of purchased items
+    with their prices, then processes them through the multi-expense parser.
+    
+    Args:
+        file: Receipt image file (JPG, PNG, JPEG, WEBP)
+        save_to_db: Whether to save extracted expenses to database
+        current_user: Authenticated user information
+    
+    Returns:
+        Multi-expense parsing result with all extracted items
+    
+    Example:
+        Upload a receipt image with save_to_db=true
+        Response: {
+            "expenses": [
+                {
+                    "amount": 4.99,
+                    "currency": "USD",
+                    "short_text": "Coffee",
+                    "area_tags": ["food"],
+                    "context_tags": [],
+                    "id": "expense_id"
+                },
+                {
+                    "amount": 12.50,
+                    "currency": "USD", 
+                    "short_text": "Sandwich",
+                    "area_tags": ["food"],
+                    "context_tags": [],
+                    "id": "expense_id"
+                }
+            ],
+            "total_count": 2,
+            "processing_time": 2.3,
+            "original_text": "Receipt items: Coffee $4.99, Sandwich $12.50",
+            "error": ""
+        }
+    """
+    try:
+        print(f"Receipt parser endpoint called with file: {file.filename}")
+        
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file type. Allowed types: {', '.join(allowed_types)}"
+            )
+        
+        # Get the user ID from the authenticated user
+        user_id = current_user["user_id"]
+        print(f"User ID: {user_id}")
+        
+        # Read the image content
+        image_content = await file.read()
+        
+        # Process the receipt using the dedicated parser
+        result = await parse_receipt_image(
+            image_content=image_content,
+            user_id=user_id,
+            save_to_db=save_to_db,
+            filename=file.filename
+        )
+        
+        return result
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error in parse_receipt endpoint: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing receipt: {str(e)}"
         )

@@ -9,7 +9,7 @@ import LoadingAnimation from '../components/LoadingAnimation';
 import DynamicIcon from '../components/DynamicIcon';
 import ExpenseCard, { getCurrencySymbol } from '../components/ExpenseCard';
 import MultiExpenseCard from '../components/MultiExpenseCard';
-import { Send } from 'lucide-react';
+import { Send, Paperclip } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMessages } from '../hooks/useMessages';
 import { useExpenses } from '../hooks/useExpenses';
@@ -134,6 +134,7 @@ export default function Chat() {
   const [notification, setNotification] = useState(null);
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const fileInputRef = useRef(null);
   
   // Store expense data in a persistent state
   const [expenseDataCache, setExpenseDataCache] = useState({});
@@ -328,6 +329,97 @@ export default function Chat() {
     }
   };
 
+  // Handle receipt upload
+  const handleReceiptUpload = async (file) => {
+    if (!file) return;
+    
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setNotification({
+        type: 'error',
+        message: 'Please upload a JPG, PNG, or WEBP image file.'
+      });
+      return;
+    }
+    
+    try {
+      setIsProcessingExpense(true);
+      
+      // Step 1: Add user message for receipt upload
+      const userMessage = {
+        id: `user-${Date.now()}`,
+        content: `📄 Uploaded receipt: ${file.name}`,
+        message_type: 'user',
+        timestamp: new Date().toISOString()
+      };
+      
+      mutate(prevMessages => [
+        ...(prevMessages || []),
+        userMessage
+      ], false);
+      
+      // Step 2: Process receipt using chatService
+      const expenseResult = await chatService.uploadReceipt(file, true);
+      
+      // Step 3: Add expense results to UI
+      const responseText = expenseResult.total_count === 1 
+        ? `Expense saved: ${expenseResult.expenses[0].short_text} - $${expenseResult.expenses[0].amount}`
+        : `${expenseResult.total_count} expenses saved successfully from receipt`;
+      
+      const expenseMessage = {
+        id: `expense-${Date.now()}`,
+        content: responseText,
+        message_type: 'system',
+        timestamp: new Date().toISOString(),
+        expense_ids: expenseResult.expenses.map(expense => expense.id),
+        expenseData: expenseResult.total_count === 1 ? expenseResult.expenses[0] : null,
+        multiExpenseData: expenseResult.total_count > 1 ? expenseResult : null
+      };
+      
+      mutate(prevMessages => [
+        ...(prevMessages || []),
+        expenseMessage
+      ], false);
+      
+      // Cache the expense data
+      setExpenseDataCache(prev => ({
+        ...prev,
+        [expenseMessage.id]: expenseResult
+      }));
+      
+      setNotification({
+        type: 'success',
+        message: `Successfully processed ${expenseResult.total_count} expense${expenseResult.total_count > 1 ? 's' : ''} from receipt!`
+      });
+    } catch (error) {
+      console.error('Receipt upload error:', error);
+      setNotification({
+        type: 'error',
+        message: error.message || 'Failed to process receipt. Please try again.'
+      });
+    } finally {
+      setIsProcessingExpense(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle file input change
+  const handleFileInputChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      handleReceiptUpload(file);
+    }
+  };
+
+  // Trigger file input
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
   // Handle delete action
   const handleDelete = async () => {
     if (!showConfirmDelete) return;
@@ -473,15 +565,37 @@ export default function Chat() {
           
           {/* Message Input - Fixed at bottom */}
           <div className="bg-white border-t border-gray-200 p-2 flex-shrink-0">
-            <form onSubmit={handleSendMessage} className="flex items-center space-x-3">
+            <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/jpg,image/png,image/webp"
+                capture="environment"
+                onChange={handleFileInputChange}
+                className="hidden"
+              />
+              
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Type a message..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+                placeholder="What did you buy?"
+                className="flex-1 px-4 py-1.5 focus:outline-none text-base bg-transparent"
                 disabled={isProcessingExpense}
               />
+              
+              {/* Attachment button */}
+              <button
+                type="button"
+                onClick={triggerFileInput}
+                disabled={isProcessingExpense}
+                className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                title="Upload receipt"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+              
               <button
                 type="submit"
                 className="p-3 rounded-full bg-gradient-to-r from-[#7B3FE4] to-[#9C6EFF] text-white disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all duration-200 transform hover:scale-105"

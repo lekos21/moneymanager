@@ -174,6 +174,46 @@ export const chatService = {
     }
   },
 
+  // Upload and process a receipt image
+  async uploadReceipt(file, saveToDb = true) {
+    try {
+      const token = await getAuthToken();
+      
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('save_to_db', saveToDb.toString());
+      
+      console.log('Uploading receipt:', file.name, 'Save to DB:', saveToDb);
+      
+      // Use fetch instead of axios for file uploads to avoid issues with FormData
+      const response = await fetch(`${API_URL}/api/agents/receipt_parser/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+          // Don't set Content-Type for FormData - let browser set it with boundary
+        },
+        body: formData
+      });
+      
+      // Parse response as JSON regardless of status
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Receipt upload failed:', response.status, data);
+        // Check if the backend returned a specific error message
+        const errorMessage = data.detail || data.message || `Receipt upload failed: ${response.status} ${response.statusText}`;
+        throw new Error(errorMessage);
+      }
+      
+      console.log('Receipt upload response:', data);
+      return data;
+    } catch (error) {
+      console.error('Error uploading receipt:', error);
+      throw error;
+    }
+  },
+
   // Smart expense parsing that chooses single or multi-expense parser
   async parseExpensesSmart(content) {
     try {
